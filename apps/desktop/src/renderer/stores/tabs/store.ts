@@ -6,6 +6,7 @@ import { trpcTabsStorage } from "renderer/lib/trpc-storage";
 import { acknowledgedStatus } from "shared/tabs-types";
 import { create } from "zustand";
 import { devtools, persist } from "zustand/middleware";
+import { useNotificationCenterStore } from "../notification-center/store";
 import { movePaneToNewTab, movePaneToTab } from "./actions/move-pane";
 import type {
 	AddFileViewerPaneOptions,
@@ -18,6 +19,7 @@ import {
 	type CreatePaneOptions,
 	createBrowserPane,
 	createBrowserTabWithPane,
+	createChatMastraPane,
 	createChatMastraTabWithPane,
 	createDevToolsPane,
 	createFileViewerPane,
@@ -97,6 +99,12 @@ const deriveTabName = (
 	return `Multiple panes (${tabPanes.length})`;
 };
 
+function markAgentNotificationReadForPane(paneId: string): void {
+	useNotificationCenterStore
+		.getState()
+		.markReadByDedupeKey(`agent-pane:${paneId}`);
+}
+
 export const useTabsStore = create<TabsStore>()(
 	devtools(
 		persist(
@@ -153,10 +161,13 @@ export const useTabsStore = create<TabsStore>()(
 					return { tabId: tab.id, paneId: pane.id };
 				},
 
-				addChatMastraTab: (workspaceId: string) => {
+				addChatMastraTab: (workspaceId: string, options) => {
 					const state = get();
 
-					const { tab, pane } = createChatMastraTabWithPane(workspaceId);
+					const { tab, pane } = createChatMastraTabWithPane(
+						workspaceId,
+						options,
+					);
 
 					const currentActiveId = state.activeTabIds[workspaceId];
 					const historyStack = state.tabHistoryStacks[workspaceId] || [];
@@ -370,6 +381,9 @@ export const useTabsStore = create<TabsStore>()(
 						const resolved = acknowledgedStatus(newPanes[paneId]?.status);
 						if (resolved !== (newPanes[paneId]?.status ?? "idle")) {
 							newPanes[paneId] = { ...newPanes[paneId], status: resolved };
+							if (resolved === "idle") {
+								markAgentNotificationReadForPane(paneId);
+							}
 							hasChanges = true;
 						}
 					}
@@ -520,6 +534,42 @@ export const useTabsStore = create<TabsStore>()(
 
 					posthog.capture("panel_opened", {
 						panel_type: "terminal",
+						workspace_id: tab.workspaceId,
+						pane_id: newPane.id,
+					});
+
+					return newPane.id;
+				},
+				addChatMastraPane: (tabId, options) => {
+					const state = get();
+					const tab = state.tabs.find((t) => t.id === tabId);
+					if (!tab) return "";
+
+					const newPane = createChatMastraPane(tabId, options);
+
+					const newLayout: MosaicNode<string> = {
+						direction: "row",
+						first: tab.layout,
+						second: newPane.id,
+						splitPercentage: 50,
+					};
+
+					const newPanes = { ...state.panes, [newPane.id]: newPane };
+					const tabName = deriveTabName(newPanes, tabId);
+
+					set({
+						tabs: state.tabs.map((t) =>
+							t.id === tabId ? { ...t, layout: newLayout, name: tabName } : t,
+						),
+						panes: newPanes,
+						focusedPaneIds: {
+							...state.focusedPaneIds,
+							[tabId]: newPane.id,
+						},
+					});
+
+					posthog.capture("panel_opened", {
+						panel_type: "chat",
 						workspace_id: tab.workspaceId,
 						pane_id: newPane.id,
 					});
@@ -895,11 +945,15 @@ export const useTabsStore = create<TabsStore>()(
 					const state = get();
 					const pane = state.panes[paneId];
 					if (!pane || pane.tabId !== tabId) return;
+					const resolvedStatus = acknowledgedStatus(pane.status);
+					if (pane.status === "review") {
+						markAgentNotificationReadForPane(paneId);
+					}
 
 					set({
 						panes: {
 							...state.panes,
-							[paneId]: { ...pane, status: acknowledgedStatus(pane.status) },
+							[paneId]: { ...pane, status: resolvedStatus },
 						},
 						focusedPaneIds: {
 							...state.focusedPaneIds,
@@ -925,6 +979,9 @@ export const useTabsStore = create<TabsStore>()(
 					const state = get();
 					const pane = state.panes[paneId];
 					if (!pane || pane.status === status) return;
+					if (pane.status === "review" && status === "idle") {
+						markAgentNotificationReadForPane(paneId);
+					}
 
 					set({
 						panes: {
@@ -972,6 +1029,9 @@ export const useTabsStore = create<TabsStore>()(
 						const resolved = acknowledgedStatus(newPanes[paneId]?.status);
 						if (resolved !== (newPanes[paneId]?.status ?? "idle")) {
 							newPanes[paneId] = { ...newPanes[paneId], status: resolved };
+							if (resolved === "idle") {
+								markAgentNotificationReadForPane(paneId);
+							}
 							hasChanges = true;
 						}
 					}
@@ -1002,6 +1062,7 @@ export const useTabsStore = create<TabsStore>()(
 							newPanes[paneId].status !== "idle"
 						) {
 							newPanes[paneId] = { ...newPanes[paneId], status: "idle" };
+							markAgentNotificationReadForPane(paneId);
 							hasChanges = true;
 						}
 					}
@@ -1737,7 +1798,28 @@ export const useTabsStore = create<TabsStore>()(
 							...state.panes,
 							[paneId]: {
 								...pane,
-								chatMastra: { sessionId },
+								chatMastra: {
+									...pane.chatMastra,
+									sessionId,
+								},
+							},
+						},
+					});
+				},
+				setChatMastraLaunchConfig: (paneId, launchConfig) => {
+					const state = get();
+					const pane = state.panes[paneId];
+					if (!pane || pane.type !== "chat-mastra") return;
+					const sessionId = pane.chatMastra?.sessionId ?? null;
+					set({
+						panes: {
+							...state.panes,
+							[paneId]: {
+								...pane,
+								chatMastra: {
+									sessionId,
+									launchConfig: launchConfig ?? null,
+								},
 							},
 						},
 					});

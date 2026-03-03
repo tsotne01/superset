@@ -1,10 +1,9 @@
 import { BashTool } from "@superset/ui/ai-elements/bash-tool";
 import { FileDiffTool } from "@superset/ui/ai-elements/file-diff-tool";
-import { UserQuestionTool } from "@superset/ui/ai-elements/user-question-tool";
 import { WebFetchTool } from "@superset/ui/ai-elements/web-fetch-tool";
 import { WebSearchTool } from "@superset/ui/ai-elements/web-search-tool";
 import { getToolName } from "ai";
-import { FileIcon, FolderIcon, MessageCircleQuestionIcon } from "lucide-react";
+import { FileIcon, FolderIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 import { posthog } from "renderer/lib/posthog";
 import { useChangesStore } from "renderer/stores/changes";
@@ -20,9 +19,28 @@ import {
 	toWsToolState,
 } from "../../utils/tool-helpers";
 import { ReadOnlyToolCall } from "../ReadOnlyToolCall";
+import { AskUserQuestionToolCall } from "./components/AskUserQuestionToolCall";
+import { CreateTaskToolCall } from "./components/CreateTaskToolCall";
+import { CreateWorkspaceToolCall } from "./components/CreateWorkspaceToolCall";
+import { DeleteTaskToolCall } from "./components/DeleteTaskToolCall";
+import { DeleteWorkspaceToolCall } from "./components/DeleteWorkspaceToolCall";
 import { EditToolExpandedDiff } from "./components/EditToolExpandedDiff";
 import { GenericToolCall } from "./components/GenericToolCall";
+import { GetAppContextToolCall } from "./components/GetAppContextToolCall";
+import { GetTaskToolCall } from "./components/GetTaskToolCall";
+import { GetWorkspaceDetailsToolCall } from "./components/GetWorkspaceDetailsToolCall";
+import { ListDevicesToolCall } from "./components/ListDevicesToolCall";
+import { ListMembersToolCall } from "./components/ListMembersToolCall";
+import { ListProjectsToolCall } from "./components/ListProjectsToolCall";
+import { ListTaskStatusesToolCall } from "./components/ListTaskStatusesToolCall";
+import { ListTasksToolCall } from "./components/ListTasksToolCall";
+import { ListWorkspacesToolCall } from "./components/ListWorkspacesToolCall";
+import { StartAgentSessionToolCall } from "./components/StartAgentSessionToolCall";
 import { SubagentToolCall } from "./components/SubagentToolCall";
+import { SupersetToolCall } from "./components/SupersetToolCall";
+import { SwitchWorkspaceToolCall } from "./components/SwitchWorkspaceToolCall";
+import { UpdateTaskToolCall } from "./components/UpdateTaskToolCall";
+import { UpdateWorkspaceToolCall } from "./components/UpdateWorkspaceToolCall";
 import { getExecuteCommandViewModel } from "./utils/getExecuteCommandViewModel";
 import { getWebSearchViewModel } from "./utils/getWebSearchViewModel";
 
@@ -32,7 +50,10 @@ interface MastraToolCallBlockProps {
 	workspaceCwd?: string;
 	sessionId?: string | null;
 	organizationId?: string | null;
-	onAnswer?: (toolCallId: string, answers: Record<string, string>) => void;
+	onAnswer?: (
+		toolCallId: string,
+		answers: Record<string, string>,
+	) => Promise<void> | void;
 }
 
 interface DiffPaneTarget {
@@ -455,35 +476,85 @@ export function MastraToolCallBlock({
 
 	// --- Ask user question → UserQuestionTool ---
 	if (toolName === "ask_user_question") {
-		const questions = Array.isArray(args.questions) ? args.questions : [];
-
-		if (part.state === "output-available" || part.state === "output-error") {
-			return (
-				<GenericToolCall
-					part={part}
-					toolName="Question"
-					icon={MessageCircleQuestionIcon}
-				/>
-			);
-		}
-
-		if (questions.length === 0) {
-			return (
-				<GenericToolCall
-					part={part}
-					toolName="Question"
-					icon={MessageCircleQuestionIcon}
-				/>
-			);
-		}
-
 		return (
-			<UserQuestionTool
-				questions={questions}
-				onAnswer={(answers) => onAnswer?.(part.toolCallId, answers)}
-				onSkip={() => onAnswer?.(part.toolCallId, {})}
+			<AskUserQuestionToolCall
+				part={part}
+				args={args}
+				result={result}
+				outputObject={outputObject}
+				nestedResultObject={nestedResultObject}
+				onAnswer={onAnswer}
 			/>
 		);
+	}
+
+	// --- Superset MCP tools ---
+	if (toolName === "create_task") {
+		return <CreateTaskToolCall part={part} />;
+	}
+
+	if (toolName === "update_task") {
+		return <UpdateTaskToolCall part={part} />;
+	}
+
+	if (toolName === "list_tasks") {
+		return <ListTasksToolCall part={part} />;
+	}
+
+	if (toolName === "get_task") {
+		return <GetTaskToolCall part={part} />;
+	}
+
+	if (toolName === "delete_task") {
+		return <DeleteTaskToolCall part={part} />;
+	}
+
+	if (toolName === "list_task_statuses") {
+		return <ListTaskStatusesToolCall part={part} />;
+	}
+
+	if (toolName === "list_members") {
+		return <ListMembersToolCall part={part} />;
+	}
+
+	if (toolName === "list_devices") {
+		return <ListDevicesToolCall part={part} />;
+	}
+
+	if (toolName === "list_workspaces") {
+		return <ListWorkspacesToolCall part={part} />;
+	}
+
+	if (toolName === "list_projects") {
+		return <ListProjectsToolCall part={part} />;
+	}
+
+	if (toolName === "get_app_context") {
+		return <GetAppContextToolCall part={part} />;
+	}
+
+	if (toolName === "get_workspace_details") {
+		return <GetWorkspaceDetailsToolCall part={part} />;
+	}
+
+	if (toolName === "create_workspace") {
+		return <CreateWorkspaceToolCall part={part} />;
+	}
+
+	if (toolName === "switch_workspace") {
+		return <SwitchWorkspaceToolCall part={part} />;
+	}
+
+	if (toolName === "update_workspace") {
+		return <UpdateWorkspaceToolCall part={part} />;
+	}
+
+	if (toolName === "delete_workspace") {
+		return <DeleteWorkspaceToolCall part={part} />;
+	}
+
+	if (toolName === "start_agent_session") {
+		return <StartAgentSessionToolCall part={part} />;
 	}
 
 	// --- Read-only exploration tools ---
@@ -494,7 +565,7 @@ export function MastraToolCallBlock({
 	// --- Destructive workspace tools ---
 	if (toolName === "mastra_workspace_mkdir") {
 		return (
-			<GenericToolCall
+			<SupersetToolCall
 				part={part}
 				toolName="Create directory"
 				icon={FolderIcon}
@@ -504,24 +575,24 @@ export function MastraToolCallBlock({
 
 	if (toolName === "mastra_workspace_delete") {
 		return (
-			<GenericToolCall part={part} toolName="Delete path" icon={FileIcon} />
+			<SupersetToolCall part={part} toolName="Delete path" icon={FileIcon} />
 		);
 	}
 
 	if (toolName === "request_sandbox_access") {
-		return <GenericToolCall part={part} toolName="Request sandbox access" />;
+		return <SupersetToolCall part={part} toolName="Request sandbox access" />;
 	}
 
 	if (toolName === "task_write") {
-		return <GenericToolCall part={part} toolName="Write task list" />;
+		return <SupersetToolCall part={part} toolName="Write task list" />;
 	}
 
 	if (toolName === "task_check") {
-		return <GenericToolCall part={part} toolName="Update task status" />;
+		return <SupersetToolCall part={part} toolName="Update task status" />;
 	}
 
 	if (toolName === "submit_plan") {
-		return <GenericToolCall part={part} toolName="Submit plan" />;
+		return <SupersetToolCall part={part} toolName="Submit plan" />;
 	}
 
 	if (toolName === "subagent") {
