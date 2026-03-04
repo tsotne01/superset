@@ -20,9 +20,52 @@ export function setSkipNextHotkeysPersist(skip: boolean): void {
 interface TrpcStorageConfig {
 	get: () => Promise<unknown>;
 	set: (input: unknown) => Promise<unknown>;
+	writeDebounceMs?: number;
 }
 
 function createTrpcStorageAdapter(config: TrpcStorageConfig): StateStorage {
+	const debounceMs = config.writeDebounceMs ?? 0;
+	let pendingValue: string | null = null;
+	let lastFlushedValue: string | null = null;
+	let flushTimer: ReturnType<typeof setTimeout> | null = null;
+	let isFlushing = false;
+
+	const flushPendingWrite = async (name: string): Promise<void> => {
+		if (isFlushing || pendingValue === null) return;
+		const valueToFlush = pendingValue;
+		pendingValue = null;
+
+		if (valueToFlush === lastFlushedValue) {
+			return;
+		}
+
+		isFlushing = true;
+		try {
+			const parsed = JSON.parse(valueToFlush) as {
+				state: unknown;
+				version: number;
+			};
+			// Persist version in localStorage, bare state via tRPC.
+			localStorage.setItem(`${name}:version`, String(parsed.version));
+			await config.set(parsed.state);
+			lastFlushedValue = valueToFlush;
+		} catch (error) {
+			console.error("[trpc-storage] Failed to set state:", error);
+		} finally {
+			isFlushing = false;
+			if (pendingValue !== null) {
+				if (debounceMs > 0) {
+					flushTimer = setTimeout(() => {
+						flushTimer = null;
+						void flushPendingWrite(name);
+					}, debounceMs);
+				} else {
+					void flushPendingWrite(name);
+				}
+			}
+		}
+	};
+
 	return {
 		getItem: async (name: string): Promise<string | null> => {
 			try {
@@ -41,16 +84,23 @@ function createTrpcStorageAdapter(config: TrpcStorageConfig): StateStorage {
 			}
 		},
 		setItem: async (name: string, value: string): Promise<void> => {
-			try {
-				const parsed = JSON.parse(value) as {
-					state: unknown;
-					version: number;
-				};
-				// Persist version in localStorage, bare state via tRPC.
-				localStorage.setItem(`${name}:version`, String(parsed.version));
-				await config.set(parsed.state);
-			} catch (error) {
-				console.error("[trpc-storage] Failed to set state:", error);
+			if (value === pendingValue || value === lastFlushedValue) {
+				return;
+			}
+
+			pendingValue = value;
+			if (flushTimer) {
+				clearTimeout(flushTimer);
+				flushTimer = null;
+			}
+
+			if (debounceMs > 0) {
+				flushTimer = setTimeout(() => {
+					flushTimer = null;
+					void flushPendingWrite(name);
+				}, debounceMs);
+			} else {
+				void flushPendingWrite(name);
 			}
 		},
 		removeItem: async (_name: string): Promise<void> => {
@@ -68,6 +118,7 @@ export const trpcTabsStorage = createJSONStorage(() =>
 		get: () => electronTrpcClient.uiState.tabs.get.query(),
 		// biome-ignore lint/suspicious/noExplicitAny: Zustand persist passes unknown, tRPC expects typed input
 		set: (input) => electronTrpcClient.uiState.tabs.set.mutate(input as any),
+		writeDebounceMs: 300,
 	}),
 );
 
