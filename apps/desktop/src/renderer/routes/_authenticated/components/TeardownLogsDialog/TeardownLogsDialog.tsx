@@ -2,12 +2,15 @@ import {
 	CodeBlock,
 	CodeBlockCopyButton,
 } from "@superset/ui/ai-elements/code-block";
+import { Button } from "@superset/ui/button";
 import {
 	Dialog,
 	DialogContent,
+	DialogFooter,
 	DialogHeader,
 	DialogTitle,
 } from "@superset/ui/dialog";
+import { toast } from "@superset/ui/sonner";
 import { useState } from "react";
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching ANSI escape sequences
@@ -17,24 +20,129 @@ function stripAnsi(text: string): string {
 	return text.replace(ANSI_REGEX, "");
 }
 
-let showLogsFn: ((logs: string) => void) | null = null;
+let showLogsFn:
+	| ((logs: string, options?: { onDeleteAnyway?: () => void }) => void)
+	| null = null;
 
-export const showTeardownLogs = (logs: string) => {
+export const showTeardownLogs = (
+	logs: string,
+	options?: { onDeleteAnyway?: () => void },
+) => {
 	if (!showLogsFn) {
 		console.error(
 			"[teardown-logs] TeardownLogsDialog not mounted. Make sure to render <TeardownLogsDialog /> in your app",
 		);
 		return;
 	}
-	showLogsFn(logs);
+	showLogsFn(logs, options);
 };
+
+function showTeardownFailedToast({
+	toastId,
+	output,
+	onForceDelete,
+}: {
+	toastId: string | number;
+	output: string;
+	onForceDelete: () => void;
+}) {
+	toast.error("Teardown failed", {
+		id: toastId,
+		action: {
+			label: "Delete Anyway",
+			onClick: onForceDelete,
+		},
+		cancel: {
+			label: "View Logs",
+			onClick: () =>
+				showTeardownLogs(output, { onDeleteAnyway: onForceDelete }),
+		},
+	});
+}
+
+async function forceDeleteWithToast({
+	name,
+	deleteFn,
+}: {
+	name: string;
+	deleteFn: () => Promise<{ success: boolean; error?: string }>;
+}) {
+	const toastId = toast.loading(`Deleting "${name}" (skipping teardown)...`);
+
+	try {
+		const result = await deleteFn();
+		if (result.success) {
+			toast.success(`Deleted "${name}"`, { id: toastId });
+		} else {
+			toast.error(result.error ?? "Failed to delete", { id: toastId });
+		}
+	} catch (error) {
+		toast.error(error instanceof Error ? error.message : "Failed to delete", {
+			id: toastId,
+		});
+	}
+}
+
+export async function deleteWithToast({
+	name,
+	deleteFn,
+	forceDeleteFn,
+}: {
+	name: string;
+	deleteFn: () => Promise<{
+		success: boolean;
+		error?: string;
+		output?: string;
+		terminalWarning?: string;
+	}>;
+	forceDeleteFn: () => Promise<{ success: boolean; error?: string }>;
+}) {
+	const toastId = toast.loading(`Deleting "${name}"...`);
+
+	try {
+		const result = await deleteFn();
+
+		if (!result.success) {
+			const { output } = result;
+			if (output) {
+				showTeardownFailedToast({
+					toastId,
+					output,
+					onForceDelete: () =>
+						forceDeleteWithToast({ name, deleteFn: forceDeleteFn }),
+				});
+			} else {
+				toast.error(result.error ?? "Failed to delete", { id: toastId });
+			}
+			return;
+		}
+
+		toast.success(`Deleted "${name}"`, { id: toastId });
+
+		if (result.terminalWarning) {
+			setTimeout(() => {
+				toast.warning("Terminal warning", {
+					description: result.terminalWarning,
+				});
+			}, 100);
+		}
+	} catch (error) {
+		toast.error(error instanceof Error ? error.message : "Failed to delete", {
+			id: toastId,
+		});
+	}
+}
 
 export function TeardownLogsDialog() {
 	const [logs, setLogs] = useState<string | null>(null);
 	const [isOpen, setIsOpen] = useState(false);
+	const [onDeleteAnyway, setOnDeleteAnyway] = useState<(() => void) | null>(
+		null,
+	);
 
-	showLogsFn = (newLogs) => {
+	showLogsFn = (newLogs, options) => {
 		setLogs(newLogs);
+		setOnDeleteAnyway(() => options?.onDeleteAnyway ?? null);
 		setIsOpen(true);
 	};
 
@@ -42,6 +150,12 @@ export function TeardownLogsDialog() {
 
 	const handleClose = () => {
 		setIsOpen(false);
+		setOnDeleteAnyway(null);
+	};
+
+	const handleDeleteAnyway = () => {
+		handleClose();
+		onDeleteAnyway?.();
 	};
 
 	return (
@@ -63,6 +177,18 @@ export function TeardownLogsDialog() {
 						<CodeBlockCopyButton />
 					</CodeBlock>
 				</div>
+				{onDeleteAnyway && (
+					<DialogFooter className="px-4 pb-4 pt-0">
+						<Button
+							variant="destructive"
+							size="sm"
+							className="h-7 px-3 text-xs"
+							onClick={handleDeleteAnyway}
+						>
+							Delete Anyway
+						</Button>
+					</DialogFooter>
+				)}
 			</DialogContent>
 		</Dialog>
 	);

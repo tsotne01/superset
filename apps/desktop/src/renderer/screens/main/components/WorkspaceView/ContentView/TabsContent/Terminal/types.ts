@@ -64,9 +64,9 @@ export interface CreateOrAttachInput {
 	cols?: number;
 	rows?: number;
 	cwd?: string;
-	initialCommands?: string[];
 	skipColdRestore?: boolean;
 	allowKilled?: boolean;
+	themeType?: "dark" | "light";
 }
 
 /**
@@ -89,9 +89,19 @@ export type CreateOrAttachMutate = (
 export interface TerminalWriteInput {
 	paneId: string;
 	data: string;
+	throwOnError?: boolean;
 }
 
-export type TerminalWriteMutate = (input: TerminalWriteInput) => void;
+export interface TerminalWriteCallbacks {
+	onSuccess?: () => void;
+	onError?: (error: { message?: string }) => void;
+	onSettled?: () => void;
+}
+
+export type TerminalWriteMutate = (
+	input: TerminalWriteInput,
+	callbacks?: TerminalWriteCallbacks,
+) => void;
 
 export interface TerminalResizeInput {
 	paneId: string;

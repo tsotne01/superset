@@ -6,6 +6,8 @@ import { z } from "zod";
 export const gitStatusSchema = z.object({
 	branch: z.string(),
 	needsRebase: z.boolean(),
+	ahead: z.number().optional(),
+	behind: z.number().optional(),
 	lastRefreshed: z.number(),
 });
 
@@ -38,18 +40,38 @@ export const gitHubStatusSchema = z.object({
 			reviewDecision: z.enum(["approved", "changes_requested", "pending"]),
 			checksStatus: z.enum(["success", "failure", "pending", "none"]),
 			checks: z.array(checkItemSchema),
+			requestedReviewers: z.array(z.string()).optional(),
 		})
 		.nullable(),
 	repoUrl: z.string(),
+	upstreamUrl: z.string().optional(),
+	isFork: z.boolean().optional(),
 	branchExistsOnRemote: z.boolean(),
+	previewUrl: z.string().optional(),
 	lastRefreshed: z.number(),
 });
 
 export type GitHubStatus = z.infer<typeof gitHubStatusSchema>;
 
-export const EXECUTION_MODES = ["sequential", "parallel"] as const;
+export const EXECUTION_MODES = [
+	"split-pane",
+	"new-tab",
+	"new-tab-split-pane",
+] as const;
 
 export type ExecutionMode = (typeof EXECUTION_MODES)[number];
+
+export function normalizeExecutionMode(mode: unknown): ExecutionMode {
+	if (
+		mode === "split-pane" ||
+		mode === "new-tab" ||
+		mode === "new-tab-split-pane"
+	) {
+		return mode;
+	}
+
+	return "split-pane";
+}
 
 /**
  * Terminal preset
@@ -60,6 +82,7 @@ export const terminalPresetSchema = z.object({
 	description: z.string().optional(),
 	cwd: z.string(),
 	commands: z.array(z.string()),
+	pinnedToBar: z.boolean().optional(),
 	isDefault: z.boolean().optional(),
 	applyOnWorkspaceCreated: z.boolean().optional(),
 	applyOnNewTab: z.boolean().optional(),
@@ -83,6 +106,8 @@ export const EXTERNAL_APPS = [
 	"vscode",
 	"vscode-insiders",
 	"cursor",
+	"antigravity",
+	"windsurf",
 	"zed",
 	"sublime",
 	"xcode",
@@ -107,6 +132,15 @@ export const EXTERNAL_APPS = [
 
 export type ExternalApp = (typeof EXTERNAL_APPS)[number];
 
+/** Apps that are not editors/IDEs and should not be set as the global default editor. */
+export const NON_EDITOR_APPS: readonly ExternalApp[] = [
+	"finder",
+	"iterm",
+	"warp",
+	"terminal",
+	"ghostty",
+] as const;
+
 /**
  * Terminal link behavior options
  */
@@ -128,3 +162,7 @@ export const BRANCH_PREFIX_MODES = [
 ] as const;
 
 export type BranchPrefixMode = (typeof BRANCH_PREFIX_MODES)[number];
+
+export const FILE_OPEN_MODES = ["split-pane", "new-tab"] as const;
+
+export type FileOpenMode = (typeof FILE_OPEN_MODES)[number];

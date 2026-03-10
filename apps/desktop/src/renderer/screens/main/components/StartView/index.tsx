@@ -2,33 +2,15 @@ import { Button } from "@superset/ui/button";
 import { cn } from "@superset/ui/utils";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { LuFolderGit, LuFolderOpen, LuX } from "react-icons/lu";
-import {
-	processOpenNewResults,
-	useOpenFromPath,
-	useOpenNew,
-} from "renderer/react-query/projects";
+import { LuFolderOpen, LuPlus, LuX } from "react-icons/lu";
+import { useOpenProject } from "renderer/react-query/projects";
 import { SupersetLogo } from "renderer/routes/sign-in/components/SupersetLogo";
-import { CloneRepoDialog } from "./CloneRepoDialog";
-import { InitGitDialog } from "./InitGitDialog";
 
 export function StartView() {
 	const navigate = useNavigate();
-	const openNew = useOpenNew();
-	const openFromPath = useOpenFromPath();
+	const { openNew, openFromPath, isPending } = useOpenProject();
 	const [error, setError] = useState<string | null>(null);
-	const [initGitDialog, setInitGitDialog] = useState<{
-		isOpen: boolean;
-		selectedPath: string;
-		selectedPaths?: string[];
-	}>({ isOpen: false, selectedPath: "" });
-	const [pendingNavigateProjectId, setPendingNavigateProjectId] = useState<
-		string | null
-	>(null);
-	const [isCloneDialogOpen, setIsCloneDialogOpen] = useState(false);
 	const [isDragOver, setIsDragOver] = useState(false);
-
-	const isLoading = openNew.isPending || openFromPath.isPending;
 
 	useEffect(() => {
 		if (!error) return;
@@ -49,53 +31,22 @@ export function StartView() {
 		};
 	}, []);
 
-	const handleOpenProject = () => {
+	const handleOpenProject = async () => {
 		if (isDragOver) return;
 		setError(null);
-		openNew.mutate(undefined, {
-			onSuccess: (result) => {
-				if (result.canceled) {
-					return;
-				}
-
-				if ("error" in result) {
-					setError(result.error);
-					return;
-				}
-
-				if ("results" in result) {
-					const { successes, needsGitInit } = processOpenNewResults({
-						results: result.results,
-					});
-
-					const firstProjectId = successes[0]?.project.id;
-
-					if (needsGitInit.length > 0) {
-						const paths = needsGitInit.map((r) => r.selectedPath);
-						// Defer navigation until git-init dialog is closed
-						if (firstProjectId) {
-							setPendingNavigateProjectId(firstProjectId);
-						}
-						setInitGitDialog({
-							isOpen: true,
-							selectedPath: paths[0],
-							selectedPaths: paths,
-						});
-					} else if (firstProjectId) {
-						navigate({
-							to: "/project/$projectId",
-							params: { projectId: firstProjectId },
-							replace: true,
-						});
-					}
-
-					return;
-				}
-			},
-			onError: (err) => {
-				setError(err.message || "Failed to open project");
-			},
-		});
+		try {
+			const projects = await openNew();
+			const firstProjectId = projects[0]?.id;
+			if (firstProjectId) {
+				navigate({
+					to: "/project/$projectId",
+					params: { projectId: firstProjectId },
+					replace: true,
+				});
+			}
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to open project");
+		}
 	};
 
 	const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -126,12 +77,12 @@ export function StartView() {
 	}, []);
 
 	const handleDrop = useCallback(
-		(e: React.DragEvent) => {
+		async (e: React.DragEvent) => {
 			e.preventDefault();
 			e.stopPropagation();
 			setIsDragOver(false);
 
-			if (isLoading) return;
+			if (isPending) return;
 
 			setError(null);
 
@@ -152,47 +103,21 @@ export function StartView() {
 				return;
 			}
 
-			openFromPath.mutate(
-				{ path: filePath },
-				{
-					onSuccess: (result) => {
-						if ("canceled" in result && result.canceled) {
-							return;
-						}
-
-						if ("error" in result) {
-							setError(result.error);
-							return;
-						}
-
-						if ("needsGitInit" in result) {
-							setInitGitDialog({
-								isOpen: true,
-								selectedPath: result.selectedPath,
-							});
-							return;
-						}
-
-						if ("project" in result && result.project) {
-							navigate({
-								to: "/project/$projectId",
-								params: { projectId: result.project.id },
-								replace: true,
-							});
-						}
-					},
-					onError: (err) => {
-						setError(err.message || "Failed to open project");
-					},
-				},
-			);
+			try {
+				const project = await openFromPath(filePath);
+				if (project) {
+					navigate({
+						to: "/project/$projectId",
+						params: { projectId: project.id },
+						replace: true,
+					});
+				}
+			} catch (err) {
+				setError(err instanceof Error ? err.message : "Failed to open project");
+			}
 		},
-		[openFromPath, isLoading, navigate],
+		[isPending, openFromPath, navigate],
 	);
-
-	const handleCloneError = (errorMessage: string) => {
-		setError(errorMessage);
-	};
 
 	return (
 		<div className="flex flex-col h-full w-full relative overflow-hidden bg-background">
@@ -216,7 +141,7 @@ export function StartView() {
 							<button
 								type="button"
 								onClick={handleOpenProject}
-								disabled={isLoading}
+								disabled={isPending}
 								className={cn(
 									"w-full rounded-xl border-2 border-dashed transition-all duration-200",
 									"focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
@@ -228,7 +153,7 @@ export function StartView() {
 							>
 								{isDragOver ? (
 									<div className="flex flex-col items-center gap-3">
-										<LuFolderGit className="w-10 h-10 text-primary" />
+										<LuFolderOpen className="w-10 h-10 text-primary" />
 										<span className="text-lg font-medium text-foreground">
 											Drop git project
 										</span>
@@ -256,16 +181,17 @@ export function StartView() {
 							)}
 						>
 							<span className="text-sm text-muted-foreground">
-								Don't have a local repo?
+								Or start a new project
 							</span>
 							<Button
 								variant="outline"
 								size="sm"
-								onClick={() => setIsCloneDialogOpen(true)}
-								disabled={isLoading}
+								onClick={() => navigate({ to: "/new-project", replace: true })}
+								disabled={isPending}
 								className="text-sm"
 							>
-								Clone Repository
+								<LuPlus className="size-3.5" />
+								New Project
 							</Button>
 						</div>
 					</div>
@@ -285,33 +211,6 @@ export function StartView() {
 					)}
 				</div>
 			</div>
-
-			<InitGitDialog
-				isOpen={initGitDialog.isOpen}
-				selectedPath={initGitDialog.selectedPath}
-				selectedPaths={initGitDialog.selectedPaths}
-				onClose={() => {
-					setInitGitDialog({ isOpen: false, selectedPath: "" });
-					if (pendingNavigateProjectId) {
-						navigate({
-							to: "/project/$projectId",
-							params: { projectId: pendingNavigateProjectId },
-							replace: true,
-						});
-						setPendingNavigateProjectId(null);
-					}
-				}}
-				onError={(msg) => {
-					setError(msg);
-					setPendingNavigateProjectId(null);
-				}}
-			/>
-
-			<CloneRepoDialog
-				isOpen={isCloneDialogOpen}
-				onClose={() => setIsCloneDialogOpen(false)}
-				onError={handleCloneError}
-			/>
 		</div>
 	);
 }

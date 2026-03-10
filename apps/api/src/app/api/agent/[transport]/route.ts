@@ -1,11 +1,17 @@
+import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { auth } from "@superset/auth/server";
-import { registerTools } from "@superset/mcp";
+import { createMcpServer } from "@superset/mcp";
 import type { McpContext } from "@superset/mcp/auth";
 import { verifyAccessToken } from "better-auth/oauth2";
-import { createMcpHandler, withMcpAuth } from "mcp-handler";
 import { env } from "@/env";
 
-async function verifyToken(req: Request, bearerToken?: string) {
+async function verifyToken(req: Request): Promise<AuthInfo | undefined> {
+	const authorization = req.headers.get("authorization");
+	const bearerToken = authorization?.startsWith("Bearer ")
+		? authorization.slice(7)
+		: undefined;
+
 	// 1. Try session auth (for desktop/web app)
 	const session = await auth.api.getSession({ headers: req.headers });
 	if (session?.session) {
@@ -29,7 +35,47 @@ async function verifyToken(req: Request, bearerToken?: string) {
 		};
 	}
 
-	// 2. Try OAuth access token verification via JWKS
+	// 2. Try API key verification (for sk_live_ tokens)
+	if (bearerToken) {
+		try {
+			const result = await auth.api.verifyApiKey({
+				body: { key: bearerToken },
+			});
+			if (result.valid && result.key) {
+				const userId = result.key.userId;
+				if (!userId) {
+					console.error("[mcp/auth] API key missing userId");
+					return undefined;
+				}
+				const metadata =
+					typeof result.key.metadata === "string"
+						? JSON.parse(result.key.metadata)
+						: result.key.metadata;
+				const organizationId = metadata?.organizationId as string | undefined;
+				if (!organizationId) {
+					console.error(
+						"[mcp/auth] API key missing organizationId in metadata",
+					);
+					return undefined;
+				}
+				return {
+					token: "api-key",
+					clientId: "api-key",
+					scopes: ["mcp:full"],
+					extra: {
+						mcpContext: {
+							userId,
+							organizationId,
+						} satisfies McpContext,
+					},
+				};
+			}
+		} catch (error) {
+			console.error("[mcp/auth] API key verification failed:", error);
+		}
+	}
+
+	// 3. Try OAuth access token verification via JWKS
 	if (bearerToken) {
 		try {
 			const payload = await verifyAccessToken(bearerToken, {
@@ -72,17 +118,33 @@ async function verifyToken(req: Request, bearerToken?: string) {
 	return undefined;
 }
 
-const baseHandler = createMcpHandler(
-	(server) => registerTools(server),
-	{ capabilities: { tools: {} } },
-	{
-		redisUrl: env.KV_URL,
-		basePath: "/api/agent",
-		verboseLogs: env.NODE_ENV === "development",
-		maxDuration: 60,
-	},
-);
+function getResourceMetadataUrl(req: Request): string {
+	const host = req.headers.get("x-forwarded-host") ?? new URL(req.url).host;
+	const proto =
+		req.headers.get("x-forwarded-proto") ??
+		new URL(req.url).protocol.replace(":", "");
+	return `${proto}://${host}/.well-known/oauth-protected-resource`;
+}
 
-const handler = withMcpAuth(baseHandler, verifyToken, { required: true });
+function unauthorizedResponse(req: Request): Response {
+	const metadataUrl = getResourceMetadataUrl(req);
+	return new Response("Unauthorized", {
+		status: 401,
+		headers: {
+			"WWW-Authenticate": `Bearer resource_metadata="${metadataUrl}"`,
+		},
+	});
+}
 
-export { handler as GET, handler as POST, handler as DELETE };
+async function handleRequest(req: Request): Promise<Response> {
+	const authInfo = await verifyToken(req);
+	if (!authInfo) return unauthorizedResponse(req);
+
+	const transport = new WebStandardStreamableHTTPServerTransport();
+	const server = createMcpServer();
+	await server.connect(transport);
+
+	return transport.handleRequest(req, { authInfo });
+}
+
+export { handleRequest as GET, handleRequest as POST, handleRequest as DELETE };

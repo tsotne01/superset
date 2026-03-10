@@ -11,13 +11,14 @@ import { Checkbox } from "@superset/ui/checkbox";
 import { Label } from "@superset/ui/label";
 import { toast } from "@superset/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import {
 	useCloseWorkspace,
 	useDeleteWorkspace,
 } from "renderer/react-query/workspaces";
-import { showTeardownLogs } from "renderer/routes/_authenticated/components/TeardownLogsDialog";
+import { deleteWithToast } from "renderer/routes/_authenticated/components/TeardownLogsDialog";
+import { focusPrimaryDialogAction } from "./focus-primary-dialog-action";
 
 interface DeleteWorkspaceDialogProps {
 	workspaceId: string;
@@ -47,6 +48,7 @@ export function DeleteWorkspaceDialog({
 	const [deleteLocalBranch, setDeleteLocalBranch] = useState<boolean | null>(
 		null,
 	);
+	const closeActionButtonRef = useRef<HTMLButtonElement | null>(null);
 	const deleteLocalBranchChecked =
 		deleteLocalBranch ?? deleteLocalBranchDefault ?? false;
 
@@ -55,7 +57,6 @@ export function DeleteWorkspaceDialog({
 			{ id: workspaceId },
 			{
 				enabled: open,
-				staleTime: Number.POSITIVE_INFINITY,
 			},
 		);
 
@@ -105,44 +106,20 @@ export function DeleteWorkspaceDialog({
 			enabled: deleteLocalBranchChecked,
 		});
 
-		const toastId = toast.loading(`Deleting "${workspaceName}"...`);
-
-		try {
-			const result = await deleteWorkspace.mutateAsync({
-				id: workspaceId,
-				deleteLocalBranch: deleteLocalBranchChecked,
-			});
-
-			if (!result.success) {
-				const { output } = result;
-				if (output) {
-					toast.error("Teardown failed", {
-						id: toastId,
-						action: {
-							label: "View Logs",
-							onClick: () => showTeardownLogs(output),
-						},
-					});
-				} else {
-					toast.error(result.error ?? "Failed to delete", { id: toastId });
-				}
-				return;
-			}
-
-			toast.success(`Deleted "${workspaceName}"`, { id: toastId });
-
-			if (result.terminalWarning) {
-				setTimeout(() => {
-					toast.warning("Terminal warning", {
-						description: result.terminalWarning,
-					});
-				}, 100);
-			}
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : "Failed to delete", {
-				id: toastId,
-			});
-		}
+		await deleteWithToast({
+			name: workspaceName,
+			deleteFn: () =>
+				deleteWorkspace.mutateAsync({
+					id: workspaceId,
+					deleteLocalBranch: deleteLocalBranchChecked,
+				}),
+			forceDeleteFn: () =>
+				deleteWorkspace.mutateAsync({
+					id: workspaceId,
+					deleteLocalBranch: deleteLocalBranchChecked,
+					force: true,
+				}),
+		});
 	};
 
 	const canDelete = canDeleteData?.canDelete ?? true;
@@ -155,7 +132,12 @@ export function DeleteWorkspaceDialog({
 	if (isBranch) {
 		return (
 			<AlertDialog open={open} onOpenChange={onOpenChange}>
-				<AlertDialogContent className="max-w-[340px] gap-0 p-0">
+				<AlertDialogContent
+					className="max-w-[340px] gap-0 p-0"
+					onOpenAutoFocus={(event) => {
+						focusPrimaryDialogAction(event, closeActionButtonRef.current);
+					}}
+				>
 					<AlertDialogHeader className="px-4 pt-4 pb-2">
 						<AlertDialogTitle className="font-medium">
 							Close workspace "{workspaceName}"?
@@ -180,6 +162,7 @@ export function DeleteWorkspaceDialog({
 							Cancel
 						</Button>
 						<Button
+							ref={closeActionButtonRef}
 							variant="secondary"
 							size="sm"
 							className="h-7 px-3 text-xs"
@@ -195,7 +178,12 @@ export function DeleteWorkspaceDialog({
 
 	return (
 		<AlertDialog open={open} onOpenChange={onOpenChange}>
-			<AlertDialogContent className="max-w-[340px] gap-0 p-0">
+			<AlertDialogContent
+				className="max-w-[340px] gap-0 p-0"
+				onOpenAutoFocus={(event) => {
+					focusPrimaryDialogAction(event, closeActionButtonRef.current);
+				}}
+			>
 				<AlertDialogHeader className="px-4 pt-4 pb-2">
 					<AlertDialogTitle className="font-medium">
 						Remove workspace "{workspaceName}"?
@@ -258,11 +246,11 @@ export function DeleteWorkspaceDialog({
 						Cancel
 					</Button>
 					<Button
+						ref={closeActionButtonRef}
 						variant="secondary"
 						size="sm"
 						className="h-7 px-3 text-xs"
 						onClick={handleClose}
-						disabled={isLoading}
 					>
 						Hide
 					</Button>

@@ -1,25 +1,39 @@
 import type { MosaicBranch, MosaicNode } from "react-mosaic-component";
-import type { ChangeCategory } from "shared/changes-types";
+import { getPathBaseName } from "shared/absolute-paths";
+import {
+	type ChangeCategory,
+	type FileStatus,
+	isNewFile,
+} from "shared/changes-types";
 import { hasRenderedPreview, isImageFile } from "shared/file-types";
 import type {
+	BrowserPaneState,
+	DevToolsPaneState,
 	DiffLayout,
 	FileViewerMode,
 	FileViewerState,
 } from "shared/tabs-types";
-import type { Pane, PaneType, Tab } from "./types";
+import type { AddChatMastraTabOptions, Pane, PaneType, Tab } from "./types";
 
 export const resolveFileViewerMode = ({
 	filePath,
 	diffCategory,
 	viewMode,
+	fileStatus,
 }: {
 	filePath: string;
 	diffCategory?: ChangeCategory;
 	viewMode?: FileViewerMode;
+	fileStatus?: FileStatus;
 }): FileViewerMode => {
 	if (viewMode) return viewMode;
 	// Images always default to rendered (no meaningful diff for binary files)
 	if (isImageFile(filePath)) return "rendered";
+	// New files have no previous version — show raw/rendered instead of an all-green diff
+	if (diffCategory && fileStatus && isNewFile(fileStatus)) {
+		if (hasRenderedPreview(filePath)) return "rendered";
+		return "raw";
+	}
 	if (diffCategory) return "diff";
 	if (hasRenderedPreview(filePath)) return "rendered";
 	return "raw";
@@ -130,7 +144,6 @@ export const getPaneIdsInVisualOrder = extractPaneIdsFromLayout;
  * Options for creating a pane with preset configuration
  */
 export interface CreatePaneOptions {
-	initialCommands?: string[];
 	initialCwd?: string;
 }
 
@@ -150,7 +163,6 @@ export const createPane = (
 		type,
 		name: "Terminal",
 		isNew: true,
-		initialCommands: options?.initialCommands,
 		initialCwd: options?.initialCwd,
 	};
 };
@@ -160,11 +172,14 @@ export const createPane = (
  */
 export interface CreateFileViewerPaneOptions {
 	filePath: string;
+	displayName?: string;
 	viewMode?: FileViewerMode;
 	/** If true, opens pinned (permanent). If false/undefined, opens in preview mode (can be replaced) */
 	isPinned?: boolean;
 	diffLayout?: DiffLayout;
 	diffCategory?: ChangeCategory;
+	/** File status from git — used to determine default view mode for new files */
+	fileStatus?: FileStatus;
 	commitHash?: string;
 	oldPath?: string;
 	/** Line to scroll to (raw mode only) */
@@ -186,6 +201,7 @@ export const createFileViewerPane = (
 		filePath: options.filePath,
 		diffCategory: options.diffCategory,
 		viewMode: options.viewMode,
+		fileStatus: options.fileStatus,
 	});
 
 	const fileViewer: FileViewerState = {
@@ -198,10 +214,11 @@ export const createFileViewerPane = (
 		oldPath: options.oldPath,
 		initialLine: options.line,
 		initialColumn: options.column,
+		displayName: options.displayName,
 	};
 
 	// Use filename for display name
-	const fileName = options.filePath.split("/").pop() || options.filePath;
+	const fileName = options.displayName || getPathBaseName(options.filePath);
 
 	return {
 		id,
@@ -212,32 +229,88 @@ export const createFileViewerPane = (
 	};
 };
 
-/**
- * Creates a new chat pane
- */
-export const createChatPane = (tabId: string): Pane => {
+export const createChatMastraPane = (
+	tabId: string,
+	options?: AddChatMastraTabOptions,
+): Pane => {
 	const id = generateId("pane");
+	const sessionId = crypto.randomUUID();
 
 	return {
 		id,
 		tabId,
-		type: "chat",
-		name: "Chat",
-		chat: {
-			sessionId: generateId("chat-session"),
+		type: "chat-mastra",
+		name: "New Chat",
+		chatMastra: {
+			sessionId,
+			launchConfig: options?.launchConfig ?? null,
 		},
 	};
 };
 
 /**
- * Creates a new tab with a chat pane atomically
+ * Options for creating a browser pane
  */
-export const createChatTabWithPane = (
+export interface CreateBrowserPaneOptions {
+	url?: string;
+}
+
+const DEFAULT_BROWSER_URL = "about:blank";
+
+/**
+ * Creates a new browser (webview) pane
+ */
+export const createBrowserPane = (
+	tabId: string,
+	options?: CreateBrowserPaneOptions,
+): Pane => {
+	const id = generateId("pane");
+	const url = options?.url ?? DEFAULT_BROWSER_URL;
+
+	const browser: BrowserPaneState = {
+		currentUrl: url,
+		history: [{ url, title: "", timestamp: Date.now() }],
+		historyIndex: 0,
+		isLoading: false,
+	};
+
+	return {
+		id,
+		tabId,
+		type: "webview",
+		name: "Browser",
+		browser,
+	};
+};
+
+/**
+ * Creates a new DevTools pane targeting a browser pane
+ */
+export const createDevToolsPane = (
+	tabId: string,
+	targetPaneId: string,
+): Pane => {
+	const id = generateId("pane");
+	const devtools: DevToolsPaneState = { targetPaneId };
+	return {
+		id,
+		tabId,
+		type: "devtools",
+		name: "DevTools",
+		devtools,
+	};
+};
+
+/**
+ * Creates a new tab with a browser pane atomically
+ */
+export const createBrowserTabWithPane = (
 	workspaceId: string,
 	existingTabs: Tab[] = [],
+	url?: string,
 ): { tab: Tab; pane: Pane } => {
 	const tabId = generateId("tab");
-	const pane = createChatPane(tabId);
+	const pane = createBrowserPane(tabId, url ? { url } : undefined);
 
 	const workspaceTabs = existingTabs.filter(
 		(t) => t.workspaceId === workspaceId,
@@ -245,7 +318,25 @@ export const createChatTabWithPane = (
 
 	const tab: Tab = {
 		id: tabId,
-		name: `Chat ${workspaceTabs.filter((t) => t.name.startsWith("Chat")).length + 1}`,
+		name: `Browser ${workspaceTabs.filter((t) => t.name.startsWith("Browser")).length + 1}`,
+		workspaceId,
+		layout: pane.id,
+		createdAt: Date.now(),
+	};
+
+	return { tab, pane };
+};
+
+export const createChatMastraTabWithPane = (
+	workspaceId: string,
+	options?: AddChatMastraTabOptions,
+): { tab: Tab; pane: Pane } => {
+	const tabId = generateId("tab");
+	const pane = createChatMastraPane(tabId, options);
+
+	const tab: Tab = {
+		id: tabId,
+		name: "New Chat",
 		workspaceId,
 		layout: pane.id,
 		createdAt: Date.now(),

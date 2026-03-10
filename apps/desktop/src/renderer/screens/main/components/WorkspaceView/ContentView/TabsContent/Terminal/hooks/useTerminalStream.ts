@@ -16,6 +16,7 @@ export interface UseTerminalStreamOptions {
 	setConnectionError: (error: string | null) => void;
 	updateModesFromData: (data: string) => void;
 	updateCwdFromData: (data: string) => void;
+	onShellExit?: () => void;
 }
 
 export interface UseTerminalStreamReturn {
@@ -31,9 +32,6 @@ export interface UseTerminalStreamReturn {
 	handleStreamData: (event: TerminalStreamEvent) => void;
 }
 
-/**
- * Hook to handle terminal stream events (data, exit, disconnect, error).
- */
 export function useTerminalStream({
 	paneId,
 	xtermRef,
@@ -45,6 +43,7 @@ export function useTerminalStream({
 	setConnectionError,
 	updateModesFromData,
 	updateCwdFromData,
+	onShellExit,
 }: UseTerminalStreamOptions): UseTerminalStreamReturn {
 	const setPaneStatus = useTabsStore((s) => s.setPaneStatus);
 	const firstStreamDataReceivedRef = useRef(false);
@@ -63,6 +62,12 @@ export function useTerminalStream({
 			const wasKilledByUser = reason === "killed";
 			wasKilledByUserRef.current = wasKilledByUser;
 			setExitStatus(wasKilledByUser ? "killed" : "exited");
+
+			const shouldAutoClosePane = !wasKilledByUser && exitCode === 0;
+			if (shouldAutoClosePane) {
+				onShellExit?.();
+				return;
+			}
 
 			if (wasKilledByUser) {
 				xterm.writeln("\r\n\r\n[Session killed]");
@@ -88,6 +93,7 @@ export function useTerminalStream({
 			wasKilledByUserRef,
 			setExitStatus,
 			setPaneStatus,
+			onShellExit,
 		],
 	);
 
@@ -102,7 +108,7 @@ export function useTerminalStream({
 				event.code === "WRITE_FAILED" &&
 				event.error?.includes("Session not found")
 			) {
-				setConnectionError("Session lost - click to reconnect");
+				setConnectionError("Session lost");
 				return;
 			}
 
@@ -149,6 +155,7 @@ export function useTerminalStream({
 						`[Terminal] First stream data received: ${paneId}, ${event.data.length} bytes`,
 					);
 				}
+
 				updateModesRef.current(event.data);
 				xterm.write(event.data);
 				updateCwdRef.current(event.data);

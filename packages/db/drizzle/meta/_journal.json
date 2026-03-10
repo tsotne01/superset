@@ -127,6 +127,69 @@
       "when": 1770583877762,
       "tag": "0017_switch_to_oauth2",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1771034439575,
+      "tag": "0018_sandbox_and_slack_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1771218285573,
+      "tag": "0019_device_presence_timestamptz",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1771357800887,
+      "tag": "0020_session_hosts_and_chat_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1771473303728,
+      "tag": "0021_add_workspace_id_to_chat_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1771740179749,
+      "tag": "0022_remove_claimed_executing_command_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1771866677057,
+      "tag": "0023_agent_commands_timestamptz",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1772675221034,
+      "tag": "0024_add_allowed_domains_to_organizations",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1772851349454,
+      "tag": "0025_add_org_id_to_github_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1772932229222,
+      "tag": "0026_add_assignee_external_snapshot",
+      "breakpoints": true
     }
   ]
 }

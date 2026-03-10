@@ -1,24 +1,110 @@
-export function sanitizeSegment(text: string, maxLength = 50): string {
-	return text
-		.toLowerCase()
+export const DEFAULT_BRANCH_SEGMENT_MAX_LENGTH = 50;
+export const DEFAULT_BRANCH_NAME_MAX_LENGTH = 100;
+
+interface SanitizeSegmentOptions {
+	preserveCase?: boolean;
+}
+
+interface SanitizeBranchNameOptions {
+	preserveFirstSegmentCase?: boolean;
+}
+
+export function sanitizeSegment(
+	text: string,
+	maxLength = DEFAULT_BRANCH_SEGMENT_MAX_LENGTH,
+	{ preserveCase = false }: SanitizeSegmentOptions = {},
+): string {
+	const normalized = preserveCase ? text : text.toLowerCase();
+	const allowedCharacters = preserveCase
+		? /[^a-zA-Z0-9._+@-]/g
+		: /[^a-z0-9._+@-]/g;
+
+	return normalized
 		.trim()
-		.replace(/[^a-z0-9\s-]/g, "")
 		.replace(/\s+/g, "-")
+		.replace(allowedCharacters, "")
+		.replace(/\.{2,}/g, ".")
+		.replace(/@\{/g, "@")
 		.replace(/-+/g, "-")
-		.replace(/^-|-$/g, "")
+		.replace(/^[-.]|[-.]+$/g, "")
+		.replace(/\.lock$/g, "")
 		.slice(0, maxLength);
 }
 
 export function sanitizeAuthorPrefix(name: string): string {
-	return sanitizeSegment(name);
+	return sanitizeSegment(name, DEFAULT_BRANCH_SEGMENT_MAX_LENGTH, {
+		preserveCase: true,
+	});
 }
 
-export function sanitizeBranchName(name: string): string {
+export function sanitizeBranchName(
+	name: string,
+	{ preserveFirstSegmentCase = false }: SanitizeBranchNameOptions = {},
+): string {
 	return name
 		.split("/")
-		.map((s) => sanitizeSegment(s))
+		.map((segment, index) =>
+			sanitizeSegment(segment, DEFAULT_BRANCH_SEGMENT_MAX_LENGTH, {
+				preserveCase: preserveFirstSegmentCase && index === 0,
+			}),
+		)
 		.filter(Boolean)
 		.join("/");
+}
+
+export function truncateBranchName(
+	branchName: string,
+	maxLength = DEFAULT_BRANCH_NAME_MAX_LENGTH,
+): string {
+	return branchName.slice(0, maxLength).replace(/\/+$/g, "");
+}
+
+export function sanitizeBranchNameWithMaxLength(
+	name: string,
+	maxLength = DEFAULT_BRANCH_NAME_MAX_LENGTH,
+	options?: SanitizeBranchNameOptions,
+): string {
+	return truncateBranchName(sanitizeBranchName(name, options), maxLength);
+}
+
+/**
+ * Returns a branch name that does not collide with existing names.
+ * If the candidate already exists, appends numeric suffixes (-1, -2, ...)
+ * to the last path segment until an available name is found.
+ */
+export function deduplicateBranchName(
+	candidate: string,
+	existingBranchNames: string[],
+): string {
+	const normalizedCandidate = candidate.trim();
+	if (!normalizedCandidate) {
+		return normalizedCandidate;
+	}
+
+	const existingSet = new Set(existingBranchNames.map((b) => b.toLowerCase()));
+	if (!existingSet.has(normalizedCandidate.toLowerCase())) {
+		return normalizedCandidate;
+	}
+
+	const segments = normalizedCandidate.split("/");
+	const lastSegment = segments.at(-1) ?? normalizedCandidate;
+	const prefix = segments.slice(0, -1).join("/");
+
+	const strippedBase = lastSegment.replace(/-\d+$/, "");
+	const baseSegment = strippedBase || lastSegment;
+	const append = (suffix: number) =>
+		prefix ? `${prefix}/${baseSegment}-${suffix}` : `${baseSegment}-${suffix}`;
+
+	for (let suffix = 1; suffix < 10_000; suffix++) {
+		const deduplicated = append(suffix);
+		if (!existingSet.has(deduplicated.toLowerCase())) {
+			return deduplicated;
+		}
+	}
+
+	return prefix
+		? `${prefix}/${baseSegment}-${Date.now()}`
+		: `${baseSegment}-${Date.now()}`;
 }
 
 export function resolveBranchPrefix({
@@ -48,5 +134,9 @@ export function resolveBranchPrefix({
 		default:
 			return null;
 	}
-	return prefix ? sanitizeSegment(prefix) : null;
+	return prefix
+		? sanitizeSegment(prefix, DEFAULT_BRANCH_SEGMENT_MAX_LENGTH, {
+				preserveCase: true,
+			})
+		: null;
 }

@@ -1,6 +1,14 @@
 import type { MosaicNode } from "react-mosaic-component";
 import { updateTree } from "react-mosaic-component";
+import { getFileOpenMode } from "renderer/hooks/useFileOpenMode";
+import { posthog } from "renderer/lib/posthog";
 import { trpcTabsStorage } from "renderer/lib/trpc-storage";
+import {
+	getPathBaseName,
+	pathsMatch,
+	retargetAbsolutePath,
+} from "shared/absolute-paths";
+import { acknowledgedStatus } from "shared/tabs-types";
 import { create } from "zustand";
 import { devtools, persist } from "zustand/middleware";
 import { movePaneToNewTab, movePaneToTab } from "./actions/move-pane";
@@ -13,7 +21,11 @@ import type {
 import {
 	buildMultiPaneLayout,
 	type CreatePaneOptions,
-	createChatTabWithPane,
+	createBrowserPane,
+	createBrowserTabWithPane,
+	createChatMastraPane,
+	createChatMastraTabWithPane,
+	createDevToolsPane,
 	createFileViewerPane,
 	createPane,
 	createTabWithPane,
@@ -100,6 +112,7 @@ export const useTabsStore = create<TabsStore>()(
 				activeTabIds: {},
 				focusedPaneIds: {},
 				tabHistoryStacks: {},
+				closedTabsStack: [],
 
 				// Tab operations
 				addTab: (workspaceId, options?: CreatePaneOptions) => {
@@ -137,13 +150,22 @@ export const useTabsStore = create<TabsStore>()(
 						},
 					});
 
+					posthog.capture("panel_opened", {
+						panel_type: "terminal",
+						workspace_id: workspaceId,
+						pane_id: pane.id,
+					});
+
 					return { tabId: tab.id, paneId: pane.id };
 				},
 
-				addChatTab: (workspaceId: string) => {
+				addChatMastraTab: (workspaceId: string, options) => {
 					const state = get();
 
-					const { tab, pane } = createChatTabWithPane(workspaceId, state.tabs);
+					const { tab, pane } = createChatMastraTabWithPane(
+						workspaceId,
+						options,
+					);
 
 					const currentActiveId = state.activeTabIds[workspaceId];
 					const historyStack = state.tabHistoryStacks[workspaceId] || [];
@@ -171,6 +193,12 @@ export const useTabsStore = create<TabsStore>()(
 						},
 					});
 
+					posthog.capture("panel_opened", {
+						panel_type: "chat",
+						workspace_id: workspaceId,
+						pane_id: pane.id,
+					});
+
 					return { tabId: tab.id, paneId: pane.id };
 				},
 
@@ -181,9 +209,8 @@ export const useTabsStore = create<TabsStore>()(
 					const state = get();
 					const tabId = generateId("tab");
 					const panes: ReturnType<typeof createPane>[] = options.commands.map(
-						(command) =>
+						(_command) =>
 							createPane(tabId, "terminal", {
-								initialCommands: [command],
 								initialCwd: options.initialCwd,
 							}),
 					);
@@ -233,6 +260,14 @@ export const useTabsStore = create<TabsStore>()(
 						},
 					});
 
+					for (const paneId of paneIds) {
+						posthog.capture("panel_opened", {
+							panel_type: "terminal",
+							workspace_id: workspaceId,
+							pane_id: paneId,
+						});
+					}
+
 					return { tabId: tab.id, paneIds };
 				},
 
@@ -242,6 +277,21 @@ export const useTabsStore = create<TabsStore>()(
 					if (!tabToRemove) return;
 
 					const paneIds = getPaneIdsForTab(state.panes, tabId);
+
+					// Snapshot the tab + panes for "reopen closed tab"
+					const closedPanes = paneIds
+						.map((id) => state.panes[id])
+						.filter(Boolean);
+					const closedEntry = {
+						tab: tabToRemove,
+						panes: closedPanes,
+						closedAt: Date.now(),
+					};
+					const closedTabsStack = [closedEntry, ...state.closedTabsStack].slice(
+						0,
+						20,
+					);
+
 					for (const paneId of paneIds) {
 						// Only kill terminal sessions for terminal panes (avoids unnecessary IPC for file-viewers)
 						const pane = state.panes[paneId];
@@ -275,6 +325,7 @@ export const useTabsStore = create<TabsStore>()(
 						panes: newPanes,
 						activeTabIds: newActiveTabIds,
 						focusedPaneIds: newFocusedPaneIds,
+						closedTabsStack,
 						tabHistoryStacks: {
 							...state.tabHistoryStacks,
 							[workspaceId]: newHistoryStack,
@@ -293,7 +344,9 @@ export const useTabsStore = create<TabsStore>()(
 				setTabAutoTitle: (tabId, title) => {
 					set((state) => {
 						const tab = state.tabs.find((t) => t.id === tabId);
-						if (!tab || tab.name === title) return state;
+						if (!tab || tab.name === title || tab.userTitle?.trim()) {
+							return state;
+						}
 						return {
 							tabs: state.tabs.map((t) =>
 								t.id === tabId ? { ...t, name: title } : t,
@@ -325,17 +378,11 @@ export const useTabsStore = create<TabsStore>()(
 					const newPanes = { ...state.panes };
 					let hasChanges = false;
 					for (const paneId of tabPaneIds) {
-						const currentStatus = newPanes[paneId]?.status;
-						if (currentStatus === "review") {
-							// User acknowledged completion
-							newPanes[paneId] = { ...newPanes[paneId], status: "idle" };
-							hasChanges = true;
-						} else if (currentStatus === "permission") {
-							// Assume permission granted, agent is now working
-							newPanes[paneId] = { ...newPanes[paneId], status: "working" };
+						const resolved = acknowledgedStatus(newPanes[paneId]?.status);
+						if (resolved !== (newPanes[paneId]?.status ?? "idle")) {
+							newPanes[paneId] = { ...newPanes[paneId], status: resolved };
 							hasChanges = true;
 						}
-						// "working" status is NOT cleared by click - persists until Stop
 					}
 
 					set({
@@ -482,6 +529,48 @@ export const useTabsStore = create<TabsStore>()(
 						},
 					});
 
+					posthog.capture("panel_opened", {
+						panel_type: "terminal",
+						workspace_id: tab.workspaceId,
+						pane_id: newPane.id,
+					});
+
+					return newPane.id;
+				},
+				addChatMastraPane: (tabId, options) => {
+					const state = get();
+					const tab = state.tabs.find((t) => t.id === tabId);
+					if (!tab) return "";
+
+					const newPane = createChatMastraPane(tabId, options);
+
+					const newLayout: MosaicNode<string> = {
+						direction: "row",
+						first: tab.layout,
+						second: newPane.id,
+						splitPercentage: 50,
+					};
+
+					const newPanes = { ...state.panes, [newPane.id]: newPane };
+					const tabName = deriveTabName(newPanes, tabId);
+
+					set({
+						tabs: state.tabs.map((t) =>
+							t.id === tabId ? { ...t, layout: newLayout, name: tabName } : t,
+						),
+						panes: newPanes,
+						focusedPaneIds: {
+							...state.focusedPaneIds,
+							[tabId]: newPane.id,
+						},
+					});
+
+					posthog.capture("panel_opened", {
+						panel_type: "chat",
+						workspace_id: tab.workspaceId,
+						pane_id: newPane.id,
+					});
+
 					return newPane.id;
 				},
 
@@ -494,9 +583,8 @@ export const useTabsStore = create<TabsStore>()(
 					if (!tab) return [];
 
 					const panes: ReturnType<typeof createPane>[] = options.commands.map(
-						(command) =>
+						(_command) =>
 							createPane(tabId, "terminal", {
-								initialCommands: [command],
 								initialCwd: options.initialCwd,
 							}),
 					);
@@ -526,6 +614,14 @@ export const useTabsStore = create<TabsStore>()(
 						},
 					});
 
+					for (const paneId of paneIds) {
+						posthog.capture("panel_opened", {
+							panel_type: "terminal",
+							workspace_id: tab.workspaceId,
+							pane_id: paneId,
+						});
+					}
+
 					return paneIds;
 				},
 
@@ -533,6 +629,13 @@ export const useTabsStore = create<TabsStore>()(
 					workspaceId: string,
 					options: AddFileViewerPaneOptions,
 				) => {
+					if (options.openInNewTab === undefined) {
+						options = {
+							...options,
+							openInNewTab: getFileOpenMode() === "new-tab",
+						};
+					}
+
 					const state = get();
 					const resolvedActiveTabId = resolveActiveTabIdForWorkspace({
 						workspaceId,
@@ -570,7 +673,7 @@ export const useTabsStore = create<TabsStore>()(
 							(p) =>
 								p?.type === "file-viewer" &&
 								p.fileViewer?.isPinned &&
-								p.fileViewer.filePath === options.filePath &&
+								pathsMatch(p.fileViewer.filePath, options.filePath) &&
 								p.fileViewer.diffCategory === options.diffCategory &&
 								p.fileViewer.commitHash === options.commitHash,
 						);
@@ -607,15 +710,19 @@ export const useTabsStore = create<TabsStore>()(
 
 						// If clicking the same file that's already in preview, just focus it
 						const isSameFile =
-							existingFileViewer.filePath === options.filePath &&
+							pathsMatch(existingFileViewer.filePath, options.filePath) &&
 							existingFileViewer.diffCategory === options.diffCategory &&
 							existingFileViewer.commitHash === options.commitHash;
 
 						if (isSameFile) {
-							if (
-								options.viewMode &&
-								existingFileViewer.viewMode !== options.viewMode
-							) {
+							const nextViewMode =
+								options.viewMode ?? existingFileViewer.viewMode;
+							const shouldUpdateViewerState =
+								nextViewMode !== existingFileViewer.viewMode ||
+								options.line !== undefined ||
+								options.column !== undefined;
+
+							if (shouldUpdateViewerState) {
 								set({
 									panes: {
 										...state.panes,
@@ -623,7 +730,11 @@ export const useTabsStore = create<TabsStore>()(
 											...paneToReuse,
 											fileViewer: {
 												...existingFileViewer,
-												viewMode: options.viewMode,
+												viewMode: nextViewMode,
+												initialLine:
+													options.line ?? existingFileViewer.initialLine,
+												initialColumn:
+													options.column ?? existingFileViewer.initialColumn,
 											},
 										},
 									},
@@ -645,12 +756,13 @@ export const useTabsStore = create<TabsStore>()(
 
 						// Different file - replace the preview pane content
 						const fileName =
-							options.filePath.split("/").pop() || options.filePath;
+							options.displayName || getPathBaseName(options.filePath);
 
 						const viewMode = resolveFileViewerMode({
 							filePath: options.filePath,
 							diffCategory: options.diffCategory,
 							viewMode: options.viewMode,
+							fileStatus: options.fileStatus,
 						});
 
 						set({
@@ -669,6 +781,7 @@ export const useTabsStore = create<TabsStore>()(
 										oldPath: options.oldPath,
 										initialLine: options.line,
 										initialColumn: options.column,
+										displayName: options.displayName,
 									},
 								},
 							},
@@ -682,6 +795,54 @@ export const useTabsStore = create<TabsStore>()(
 					}
 
 					// No reusable pane found, create a new one
+					if (options.openInNewTab) {
+						const workspaceId = activeTab.workspaceId;
+						const newTabId = generateId("tab");
+						const newPane = createFileViewerPane(newTabId, options);
+
+						const newTab = {
+							id: newTabId,
+							workspaceId,
+							name: newPane.name,
+							layout: newPane.id as MosaicNode<string>,
+							createdAt: Date.now(),
+						};
+
+						const currentActiveId = state.activeTabIds[workspaceId];
+						const historyStack = state.tabHistoryStacks[workspaceId] || [];
+						const newHistoryStack = currentActiveId
+							? [
+									currentActiveId,
+									...historyStack.filter((id) => id !== currentActiveId),
+								]
+							: historyStack;
+
+						set({
+							tabs: [...state.tabs, newTab],
+							panes: { ...state.panes, [newPane.id]: newPane },
+							activeTabIds: {
+								...state.activeTabIds,
+								[workspaceId]: newTab.id,
+							},
+							focusedPaneIds: {
+								...state.focusedPaneIds,
+								[newTab.id]: newPane.id,
+							},
+							tabHistoryStacks: {
+								...state.tabHistoryStacks,
+								[workspaceId]: newHistoryStack,
+							},
+						});
+
+						posthog.capture("panel_opened", {
+							panel_type: "file_viewer",
+							workspace_id: workspaceId,
+							pane_id: newPane.id,
+						});
+
+						return newPane.id;
+					}
+
 					const newPane = createFileViewerPane(activeTab.id, options);
 
 					const newLayout: MosaicNode<string> = {
@@ -707,6 +868,12 @@ export const useTabsStore = create<TabsStore>()(
 						},
 					});
 
+					posthog.capture("panel_opened", {
+						panel_type: "file_viewer",
+						workspace_id: activeTab.workspaceId,
+						pane_id: newPane.id,
+					});
+
 					return newPane.id;
 				},
 
@@ -718,8 +885,19 @@ export const useTabsStore = create<TabsStore>()(
 					const tab = state.tabs.find((t) => t.id === pane.tabId);
 					if (!tab) return;
 
-					// If this is the last pane, remove the entire tab
-					if (isLastPaneInTab(state.panes, tab.id)) {
+					// Collect this pane + any devtools panes targeting it
+					const paneIdsToRemove = [paneId];
+					for (const [id, p] of Object.entries(state.panes)) {
+						if (p.type === "devtools" && p.devtools?.targetPaneId === paneId) {
+							paneIdsToRemove.push(id);
+						}
+					}
+
+					// If removing all these panes leaves the tab empty, remove the tab
+					const remainingPanes = Object.entries(state.panes).filter(
+						([id, p]) => p.tabId === tab.id && !paneIdsToRemove.includes(id),
+					);
+					if (remainingPanes.length === 0) {
 						get().removeTab(tab.id);
 						return;
 					}
@@ -727,23 +905,31 @@ export const useTabsStore = create<TabsStore>()(
 					// Must get adjacent pane BEFORE removing from layout
 					const adjacentPaneId = getAdjacentPaneId(tab.layout, paneId);
 
-					// Only kill terminal sessions for terminal panes (avoids unnecessary IPC for file-viewers)
-					if (pane.type === "terminal") {
-						killTerminalForPane(paneId);
+					// Kill terminal sessions for terminal panes
+					for (const id of paneIdsToRemove) {
+						if (state.panes[id]?.type === "terminal") {
+							killTerminalForPane(id);
+						}
 					}
 
-					const newLayout = removePaneFromLayout(tab.layout, paneId);
-					if (!newLayout) {
-						// This shouldn't happen since we checked isLastPaneInTab
-						get().removeTab(tab.id);
-						return;
+					// Remove all panes from layout
+					let newLayout = tab.layout;
+					for (const id of paneIdsToRemove) {
+						const result = removePaneFromLayout(newLayout, id);
+						if (!result) {
+							get().removeTab(tab.id);
+							return;
+						}
+						newLayout = result;
 					}
 
 					const newPanes = { ...state.panes };
-					delete newPanes[paneId];
+					for (const id of paneIdsToRemove) {
+						delete newPanes[id];
+					}
 
 					let newFocusedPaneIds = state.focusedPaneIds;
-					if (state.focusedPaneIds[tab.id] === paneId) {
+					if (paneIdsToRemove.includes(state.focusedPaneIds[tab.id])) {
 						newFocusedPaneIds = {
 							...state.focusedPaneIds,
 							[tab.id]: adjacentPaneId ?? getFirstPaneId(newLayout),
@@ -766,10 +952,17 @@ export const useTabsStore = create<TabsStore>()(
 					const pane = state.panes[paneId];
 					if (!pane || pane.tabId !== tabId) return;
 
+					const alreadyFocused = state.focusedPaneIds[tabId] === paneId;
+
 					set({
 						panes: {
 							...state.panes,
-							[paneId]: { ...pane, status: "idle" },
+							[paneId]: {
+								...pane,
+								status: alreadyFocused
+									? pane.status
+									: acknowledgedStatus(pane.status),
+							},
 						},
 						focusedPaneIds: {
 							...state.focusedPaneIds,
@@ -811,7 +1004,7 @@ export const useTabsStore = create<TabsStore>()(
 
 					const newPanes = {
 						...state.panes,
-						[paneId]: { ...pane, name },
+						[paneId]: { ...pane, name, userTitle: name },
 					};
 					const tabName = deriveTabName(newPanes, pane.tabId);
 
@@ -820,6 +1013,20 @@ export const useTabsStore = create<TabsStore>()(
 						tabs: state.tabs.map((t) =>
 							t.id === pane.tabId ? { ...t, name: tabName } : t,
 						),
+					});
+				},
+				setPaneAutoTitle: (paneId, title) => {
+					set((state) => {
+						const pane = state.panes[paneId];
+						if (!pane || pane.name === title || pane.userTitle?.trim()) {
+							return state;
+						}
+						return {
+							panes: {
+								...state.panes,
+								[paneId]: { ...pane, name: title },
+							},
+						};
 					});
 				},
 
@@ -839,17 +1046,41 @@ export const useTabsStore = create<TabsStore>()(
 					const newPanes = { ...state.panes };
 					let hasChanges = false;
 					for (const paneId of workspacePaneIds) {
-						const currentStatus = newPanes[paneId]?.status;
-						if (currentStatus === "review") {
-							// User acknowledged completion
-							newPanes[paneId] = { ...newPanes[paneId], status: "idle" };
-							hasChanges = true;
-						} else if (currentStatus === "permission") {
-							// Assume permission granted, Claude is now working
-							newPanes[paneId] = { ...newPanes[paneId], status: "working" };
+						const resolved = acknowledgedStatus(newPanes[paneId]?.status);
+						if (resolved !== (newPanes[paneId]?.status ?? "idle")) {
+							newPanes[paneId] = { ...newPanes[paneId], status: resolved };
 							hasChanges = true;
 						}
-						// "working" status is NOT cleared by click - persists until Stop
+					}
+
+					if (hasChanges) {
+						set({ panes: newPanes });
+					}
+				},
+
+				resetWorkspaceStatus: (workspaceId) => {
+					const state = get();
+					const workspaceTabs = state.tabs.filter(
+						(t) => t.workspaceId === workspaceId,
+					);
+					const workspacePaneIds = workspaceTabs.flatMap((t) =>
+						extractPaneIdsFromLayout(t.layout),
+					);
+
+					if (workspacePaneIds.length === 0) {
+						return;
+					}
+
+					const newPanes = { ...state.panes };
+					let hasChanges = false;
+					for (const paneId of workspacePaneIds) {
+						if (
+							newPanes[paneId]?.status &&
+							newPanes[paneId].status !== "idle"
+						) {
+							newPanes[paneId] = { ...newPanes[paneId], status: "idle" };
+							hasChanges = true;
+						}
 					}
 
 					if (hasChanges) {
@@ -877,14 +1108,85 @@ export const useTabsStore = create<TabsStore>()(
 					});
 				},
 
+				retargetFileViewerPaths: (
+					workspaceId,
+					oldAbsolutePath,
+					newAbsolutePath,
+					isDirectory,
+				) => {
+					set((state) => {
+						const workspaceTabIds = new Set(
+							state.tabs
+								.filter((tab) => tab.workspaceId === workspaceId)
+								.map((tab) => tab.id),
+						);
+						if (workspaceTabIds.size === 0) {
+							return state;
+						}
+
+						let hasChanges = false;
+						const nextPanes = { ...state.panes };
+						const touchedTabIds = new Set<string>();
+
+						for (const [paneId, pane] of Object.entries(state.panes)) {
+							if (
+								pane.type !== "file-viewer" ||
+								!pane.fileViewer ||
+								!workspaceTabIds.has(pane.tabId)
+							) {
+								continue;
+							}
+
+							const nextFilePath = retargetAbsolutePath(
+								pane.fileViewer.filePath,
+								oldAbsolutePath,
+								newAbsolutePath,
+								isDirectory,
+							);
+							if (!nextFilePath) {
+								continue;
+							}
+
+							hasChanges = true;
+							touchedTabIds.add(pane.tabId);
+							nextPanes[paneId] = {
+								...pane,
+								name:
+									pane.fileViewer.displayName ?? getPathBaseName(nextFilePath),
+								fileViewer: {
+									...pane.fileViewer,
+									filePath: nextFilePath,
+								},
+							};
+						}
+
+						if (!hasChanges) {
+							return state;
+						}
+
+						const nextTabs = state.tabs.map((tab) => {
+							if (tab.userTitle?.trim() || !touchedTabIds.has(tab.id)) {
+								return tab;
+							}
+
+							return {
+								...tab,
+								name: deriveTabName(nextPanes, tab.id),
+							};
+						});
+
+						return {
+							panes: nextPanes,
+							tabs: nextTabs,
+						};
+					});
+				},
+
 				clearPaneInitialData: (paneId) => {
 					set((state) => {
 						const pane = state.panes[paneId];
 						if (!pane) return state;
-						if (
-							pane.initialCommands === undefined &&
-							pane.initialCwd === undefined
-						) {
+						if (pane.initialCwd === undefined) {
 							return state;
 						}
 						return {
@@ -892,7 +1194,6 @@ export const useTabsStore = create<TabsStore>()(
 								...state.panes,
 								[paneId]: {
 									...pane,
-									initialCommands: undefined,
 									initialCwd: undefined,
 								},
 							},
@@ -929,8 +1230,19 @@ export const useTabsStore = create<TabsStore>()(
 					const sourcePane = state.panes[sourcePaneId];
 					if (!sourcePane || sourcePane.tabId !== tabId) return;
 
-					// Always create a new terminal when splitting
-					const newPane = createPane(tabId, "terminal", options);
+					const paneType = options?.paneType ?? "terminal";
+					const newPane =
+						paneType === "chat-mastra"
+							? createChatMastraPane(tabId)
+							: paneType === "webview"
+								? createBrowserPane(tabId)
+								: createPane(tabId, "terminal", options);
+					const panelType =
+						paneType === "chat-mastra"
+							? "chat"
+							: paneType === "webview"
+								? "browser"
+								: "terminal";
 
 					let newLayout: MosaicNode<string>;
 					if (path && path.length > 0) {
@@ -971,6 +1283,12 @@ export const useTabsStore = create<TabsStore>()(
 							[tabId]: newPane.id,
 						},
 					});
+
+					posthog.capture("panel_opened", {
+						panel_type: panelType,
+						workspace_id: tab.workspaceId,
+						pane_id: newPane.id,
+					});
 				},
 
 				splitPaneHorizontal: (tabId, sourcePaneId, path, options) => {
@@ -981,8 +1299,19 @@ export const useTabsStore = create<TabsStore>()(
 					const sourcePane = state.panes[sourcePaneId];
 					if (!sourcePane || sourcePane.tabId !== tabId) return;
 
-					// Always create a new terminal when splitting
-					const newPane = createPane(tabId, "terminal", options);
+					const paneType = options?.paneType ?? "terminal";
+					const newPane =
+						paneType === "chat-mastra"
+							? createChatMastraPane(tabId)
+							: paneType === "webview"
+								? createBrowserPane(tabId)
+								: createPane(tabId, "terminal", options);
+					const panelType =
+						paneType === "chat-mastra"
+							? "chat"
+							: paneType === "webview"
+								? "browser"
+								: "terminal";
 
 					let newLayout: MosaicNode<string>;
 					if (path && path.length > 0) {
@@ -1022,6 +1351,12 @@ export const useTabsStore = create<TabsStore>()(
 							...state.focusedPaneIds,
 							[tabId]: newPane.id,
 						},
+					});
+
+					posthog.capture("panel_opened", {
+						panel_type: panelType,
+						workspace_id: tab.workspaceId,
+						pane_id: newPane.id,
 					});
 				},
 
@@ -1080,18 +1415,523 @@ export const useTabsStore = create<TabsStore>()(
 					return moveResult.newTabId;
 				},
 
-				// Chat operations
-				switchChatSession: (paneId, sessionId) => {
+				// Browser operations
+				addBrowserTab: (workspaceId: string, url?: string) => {
+					const state = get();
+
+					const { tab, pane } = createBrowserTabWithPane(
+						workspaceId,
+						state.tabs,
+						url,
+					);
+
+					const currentActiveId = state.activeTabIds[workspaceId];
+					const historyStack = state.tabHistoryStacks[workspaceId] || [];
+					const newHistoryStack = currentActiveId
+						? [
+								currentActiveId,
+								...historyStack.filter((id) => id !== currentActiveId),
+							]
+						: historyStack;
+
+					set({
+						tabs: [...state.tabs, tab],
+						panes: { ...state.panes, [pane.id]: pane },
+						activeTabIds: {
+							...state.activeTabIds,
+							[workspaceId]: tab.id,
+						},
+						focusedPaneIds: {
+							...state.focusedPaneIds,
+							[tab.id]: pane.id,
+						},
+						tabHistoryStacks: {
+							...state.tabHistoryStacks,
+							[workspaceId]: newHistoryStack,
+						},
+					});
+
+					posthog.capture("panel_opened", {
+						panel_type: "browser",
+						workspace_id: workspaceId,
+						pane_id: pane.id,
+					});
+
+					return { tabId: tab.id, paneId: pane.id };
+				},
+
+				openInBrowserPane: (workspaceId: string, url: string) => {
+					const state = get();
+
+					// Find an existing browser pane in this workspace
+					const workspaceTabIds = new Set(
+						state.tabs
+							.filter((t) => t.workspaceId === workspaceId)
+							.map((t) => t.id),
+					);
+					const existingPane = Object.values(state.panes).find(
+						(p) =>
+							p.type === "webview" && p.browser && workspaceTabIds.has(p.tabId),
+					);
+
+					if (existingPane?.browser) {
+						// Navigate existing pane and make its tab active
+						const { history: prevHistory, historyIndex } = existingPane.browser;
+						const history = prevHistory.slice(0, historyIndex + 1);
+						history.push({
+							url,
+							title: "",
+							timestamp: Date.now(),
+						});
+						if (history.length > 100) {
+							history.splice(0, history.length - 100);
+						}
+
+						const currentActiveId = state.activeTabIds[workspaceId];
+						const historyStack = state.tabHistoryStacks[workspaceId] || [];
+						const newHistoryStack = currentActiveId
+							? [
+									currentActiveId,
+									...historyStack.filter((id) => id !== currentActiveId),
+								]
+							: historyStack;
+
+						const newPanes = {
+							...state.panes,
+							[existingPane.id]: {
+								...existingPane,
+								name: "Browser",
+								browser: {
+									...existingPane.browser,
+									currentUrl: url,
+									history,
+									historyIndex: history.length - 1,
+								},
+							},
+						};
+						const tabName = deriveTabName(newPanes, existingPane.tabId);
+
+						set({
+							panes: newPanes,
+							tabs: state.tabs.map((t) =>
+								t.id === existingPane.tabId ? { ...t, name: tabName } : t,
+							),
+							activeTabIds: {
+								...state.activeTabIds,
+								[workspaceId]: existingPane.tabId,
+							},
+							focusedPaneIds: {
+								...state.focusedPaneIds,
+								[existingPane.tabId]: existingPane.id,
+							},
+							tabHistoryStacks: {
+								...state.tabHistoryStacks,
+								[workspaceId]: newHistoryStack,
+							},
+						});
+					} else {
+						// No existing browser pane — add one to the active tab
+						const resolvedActiveTabId = resolveActiveTabIdForWorkspace({
+							workspaceId,
+							tabs: state.tabs,
+							activeTabIds: state.activeTabIds,
+							tabHistoryStacks: state.tabHistoryStacks,
+						});
+						const activeTab = resolvedActiveTabId
+							? state.tabs.find((t) => t.id === resolvedActiveTabId)
+							: null;
+
+						if (!activeTab) {
+							get().addBrowserTab(workspaceId, url);
+							return;
+						}
+
+						const newPane = createBrowserPane(activeTab.id, {
+							url,
+						});
+						const newLayout: MosaicNode<string> = {
+							direction: "row",
+							first: activeTab.layout,
+							second: newPane.id,
+							splitPercentage: 50,
+						};
+						const newPanes = {
+							...state.panes,
+							[newPane.id]: newPane,
+						};
+						const tabName = deriveTabName(newPanes, activeTab.id);
+
+						set({
+							tabs: state.tabs.map((t) =>
+								t.id === activeTab.id
+									? {
+											...t,
+											layout: newLayout,
+											name: tabName,
+										}
+									: t,
+							),
+							panes: newPanes,
+							focusedPaneIds: {
+								...state.focusedPaneIds,
+								[activeTab.id]: newPane.id,
+							},
+						});
+
+						posthog.capture("panel_opened", {
+							panel_type: "browser",
+							workspace_id: workspaceId,
+							pane_id: newPane.id,
+						});
+					}
+				},
+
+				updateBrowserUrl: (
+					paneId: string,
+					url: string,
+					title: string,
+					faviconUrl?: string,
+				) => {
 					const state = get();
 					const pane = state.panes[paneId];
-					if (!pane?.chat) return;
+					if (!pane?.browser) return;
+
+					const { history: prevHistory, historyIndex } = pane.browser;
+					const currentEntry = prevHistory[historyIndex];
+
+					// If the URL matches the current entry, just update the title/favicon
+					if (currentEntry && currentEntry.url === url) {
+						const titleChanged = currentEntry.title !== title;
+						const faviconChanged =
+							faviconUrl !== undefined &&
+							currentEntry.faviconUrl !== faviconUrl;
+						if (!titleChanged && !faviconChanged) return;
+						const history = [...prevHistory];
+						history[historyIndex] = {
+							...currentEntry,
+							title,
+							...(faviconUrl !== undefined ? { faviconUrl } : {}),
+						};
+						const newPanes = {
+							...state.panes,
+							[paneId]: {
+								...pane,
+								name: title || "Browser",
+								browser: { ...pane.browser, history },
+							},
+						};
+						const tabName = deriveTabName(newPanes, pane.tabId);
+						set({
+							panes: newPanes,
+							tabs: state.tabs.map((t) =>
+								t.id === pane.tabId ? { ...t, name: tabName } : t,
+							),
+						});
+						return;
+					}
+
+					// Truncate forward entries when navigating from a non-end position
+					const history = prevHistory.slice(0, historyIndex + 1);
+					history.push({
+						url,
+						title,
+						timestamp: Date.now(),
+						...(faviconUrl ? { faviconUrl } : {}),
+					});
+					if (history.length > 100) {
+						history.splice(0, history.length - 100);
+					}
+
+					const newPanes = {
+						...state.panes,
+						[paneId]: {
+							...pane,
+							name: title || "Browser",
+							browser: {
+								...pane.browser,
+								currentUrl: url,
+								history,
+								historyIndex: history.length - 1,
+							},
+						},
+					};
+					const tabName = deriveTabName(newPanes, pane.tabId);
+					set({
+						panes: newPanes,
+						tabs: state.tabs.map((t) =>
+							t.id === pane.tabId ? { ...t, name: tabName } : t,
+						),
+					});
+				},
+
+				navigateBrowserHistory: (
+					paneId: string,
+					direction: "back" | "forward",
+				): string | null => {
+					const state = get();
+					const pane = state.panes[paneId];
+					if (!pane?.browser) return null;
+
+					const { history, historyIndex } = pane.browser;
+					const newIndex =
+						direction === "back" ? historyIndex - 1 : historyIndex + 1;
+
+					if (newIndex < 0 || newIndex >= history.length) return null;
+
+					const entry = history[newIndex];
+					const newPanes = {
+						...state.panes,
+						[paneId]: {
+							...pane,
+							name: entry.title || "Browser",
+							browser: {
+								...pane.browser,
+								currentUrl: entry.url,
+								historyIndex: newIndex,
+							},
+						},
+					};
+					const tabName = deriveTabName(newPanes, pane.tabId);
+					set({
+						panes: newPanes,
+						tabs: state.tabs.map((t) =>
+							t.id === pane.tabId ? { ...t, name: tabName } : t,
+						),
+					});
+
+					return entry.url;
+				},
+
+				updateBrowserLoading: (paneId: string, isLoading: boolean) => {
+					const state = get();
+					const pane = state.panes[paneId];
+					if (!pane?.browser || pane.browser.isLoading === isLoading) return;
 
 					set({
 						panes: {
 							...state.panes,
 							[paneId]: {
 								...pane,
-								chat: { sessionId },
+								browser: {
+									...pane.browser,
+									isLoading,
+								},
+							},
+						},
+					});
+				},
+
+				setBrowserError: (paneId, error) => {
+					const state = get();
+					const pane = state.panes[paneId];
+					if (!pane?.browser) return;
+
+					set({
+						panes: {
+							...state.panes,
+							[paneId]: {
+								...pane,
+								browser: {
+									...pane.browser,
+									error,
+								},
+							},
+						},
+					});
+				},
+
+				setBrowserViewport: (paneId, viewport) => {
+					const state = get();
+					const pane = state.panes[paneId];
+					if (!pane?.browser) return;
+
+					set({
+						panes: {
+							...state.panes,
+							[paneId]: {
+								...pane,
+								browser: {
+									...pane.browser,
+									viewport,
+								},
+							},
+						},
+					});
+				},
+
+				openDevToolsPane: (tabId, browserPaneId, path) => {
+					const state = get();
+					const tab = state.tabs.find((t) => t.id === tabId);
+					if (!tab) return null;
+
+					const sourcePane = state.panes[browserPaneId];
+					if (!sourcePane || sourcePane.tabId !== tabId) return null;
+
+					const newPane = createDevToolsPane(tabId, browserPaneId);
+
+					let newLayout: MosaicNode<string>;
+					if (path && path.length > 0) {
+						newLayout = updateTree(tab.layout, [
+							{
+								path,
+								spec: {
+									$set: {
+										direction: "row",
+										first: browserPaneId,
+										second: newPane.id,
+										splitPercentage: 50,
+									},
+								},
+							},
+						]);
+					} else {
+						newLayout = {
+							direction: "row",
+							first: tab.layout,
+							second: newPane.id,
+							splitPercentage: 50,
+						};
+					}
+
+					const newPanes = { ...state.panes, [newPane.id]: newPane };
+
+					set({
+						tabs: state.tabs.map((t) =>
+							t.id === tabId ? { ...t, layout: newLayout } : t,
+						),
+						panes: newPanes,
+						focusedPaneIds: {
+							...state.focusedPaneIds,
+							[tabId]: browserPaneId,
+						},
+					});
+
+					posthog.capture("panel_opened", {
+						panel_type: "devtools",
+						workspace_id: tab.workspaceId,
+						pane_id: newPane.id,
+					});
+
+					return newPane.id;
+				},
+
+				// Reopen operations
+				reopenClosedTab: (workspaceId: string): boolean => {
+					const state = get();
+					// Find the most recently closed tab for this workspace
+					const idx = state.closedTabsStack.findIndex(
+						(entry) => entry.tab.workspaceId === workspaceId,
+					);
+					if (idx === -1) return false;
+
+					const entry = state.closedTabsStack[idx];
+					const newStack = [
+						...state.closedTabsStack.slice(0, idx),
+						...state.closedTabsStack.slice(idx + 1),
+					];
+
+					// Restore the tab with a new ID to avoid collisions
+					const newTabId = generateId("tab");
+					const restoredTab = {
+						...entry.tab,
+						id: newTabId,
+					};
+
+					// Restore panes with updated tabId references
+					const idMap = new Map<string, string>();
+					const restoredPanes: Record<string, (typeof entry.panes)[number]> =
+						{};
+					for (const pane of entry.panes) {
+						const newPaneId = generateId("pane");
+						idMap.set(pane.id, newPaneId);
+						restoredPanes[newPaneId] = {
+							...pane,
+							id: newPaneId,
+							tabId: newTabId,
+							status: "idle",
+						};
+					}
+
+					// Remap layout leaf IDs
+					const remapLayout = (
+						node: MosaicNode<string>,
+					): MosaicNode<string> => {
+						if (typeof node === "string") {
+							return idMap.get(node) ?? node;
+						}
+						return {
+							...node,
+							first: remapLayout(node.first),
+							second: remapLayout(node.second),
+						};
+					};
+					restoredTab.layout = remapLayout(restoredTab.layout);
+
+					const currentActiveId = state.activeTabIds[workspaceId];
+					const historyStack = state.tabHistoryStacks[workspaceId] || [];
+					const newHistoryStack = currentActiveId
+						? [
+								currentActiveId,
+								...historyStack.filter((id) => id !== currentActiveId),
+							]
+						: historyStack;
+
+					const firstPaneId = getFirstPaneId(restoredTab.layout);
+
+					set({
+						tabs: [...state.tabs, restoredTab],
+						panes: { ...state.panes, ...restoredPanes },
+						activeTabIds: {
+							...state.activeTabIds,
+							[workspaceId]: newTabId,
+						},
+						focusedPaneIds: {
+							...state.focusedPaneIds,
+							[newTabId]: firstPaneId,
+						},
+						closedTabsStack: newStack,
+						tabHistoryStacks: {
+							...state.tabHistoryStacks,
+							[workspaceId]: newHistoryStack,
+						},
+					});
+
+					return true;
+				},
+
+				// Chat operations
+				switchChatMastraSession: (paneId, sessionId) => {
+					const state = get();
+					const pane = state.panes[paneId];
+					if (!pane || pane.type !== "chat-mastra") return;
+
+					set({
+						panes: {
+							...state.panes,
+							[paneId]: {
+								...pane,
+								chatMastra: {
+									...pane.chatMastra,
+									sessionId,
+								},
+							},
+						},
+					});
+				},
+				setChatMastraLaunchConfig: (paneId, launchConfig) => {
+					const state = get();
+					const pane = state.panes[paneId];
+					if (!pane || pane.type !== "chat-mastra") return;
+					const sessionId = pane.chatMastra?.sessionId ?? null;
+					set({
+						panes: {
+							...state.panes,
+							[paneId]: {
+								...pane,
+								chatMastra: {
+									sessionId,
+									launchConfig: launchConfig ?? null,
+								},
 							},
 						},
 					});
@@ -1128,7 +1968,7 @@ export const useTabsStore = create<TabsStore>()(
 			}),
 			{
 				name: "tabs-storage",
-				version: 3,
+				version: 7,
 				storage: trpcTabsStorage,
 				migrate: (persistedState, version) => {
 					const state = persistedState as TabsState;
@@ -1152,6 +1992,26 @@ export const useTabsStore = create<TabsStore>()(
 								// Default old panes to pinned (they were explicitly opened)
 								pane.fileViewer.isPinned = legacyFileViewer.isLocked ?? true;
 								delete legacyFileViewer.isLocked;
+							}
+						}
+					}
+					if (version < 5 && state.panes) {
+						for (const pane of Object.values(state.panes)) {
+							if (pane.chatMastra) {
+								pane.chatMastra.sessionId = null;
+							}
+						}
+					}
+					if (version < 7 && state.panes) {
+						for (const pane of Object.values(state.panes)) {
+							// biome-ignore lint/suspicious/noExplicitAny: migration from legacy chat pane shape
+							const legacyPane = pane as any;
+							if (legacyPane.type === "chat") {
+								legacyPane.type = "chat-mastra";
+								legacyPane.chatMastra = {
+									sessionId: legacyPane.chat?.sessionId ?? null,
+								};
+								delete legacyPane.chat;
 							}
 						}
 					}

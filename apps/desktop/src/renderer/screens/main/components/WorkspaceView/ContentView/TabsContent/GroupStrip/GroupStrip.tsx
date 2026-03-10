@@ -1,40 +1,33 @@
-import { FEATURE_FLAGS } from "@superset/shared/constants";
-import { Button } from "@superset/ui/button";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuSeparator,
-	DropdownMenuTrigger,
-} from "@superset/ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
+import type { TerminalPreset } from "@superset/local-db";
+import { eq, or } from "@tanstack/db";
+import { useLiveQuery } from "@tanstack/react-db";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { useFeatureFlagEnabled } from "posthog-js/react";
-import { useCallback, useMemo, useState } from "react";
-import { BsTerminalPlus } from "react-icons/bs";
 import {
-	HiMiniChevronDown,
-	HiMiniCog6Tooth,
-	HiMiniCommandLine,
-	HiStar,
-} from "react-icons/hi2";
-import { TbMessageCirclePlus } from "react-icons/tb";
-import {
-	getPresetIcon,
-	useIsDarkTheme,
-} from "renderer/assets/app-icons/preset-icons";
-import { HotkeyTooltipContent } from "renderer/components/HotkeyTooltipContent";
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import { electronTrpc } from "renderer/lib/electron-trpc";
 import { usePresets } from "renderer/react-query/presets";
+import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { useTabsStore } from "renderer/stores/tabs/store";
 import { useTabsWithPresets } from "renderer/stores/tabs/useTabsWithPresets";
 import {
 	isLastPaneInTab,
 	resolveActiveTabIdForWorkspace,
 } from "renderer/stores/tabs/utils";
+import {
+	DEFAULT_SHOW_PRESETS_BAR,
+	DEFAULT_USE_COMPACT_TERMINAL_ADD_BUTTON,
+} from "shared/constants";
 import { type ActivePaneStatus, pickHigherStatus } from "shared/tabs-types";
-import { PresetMenuItemShortcut } from "./components/PresetMenuItemShortcut";
+import { AddTabButton } from "./components/AddTabButton";
 import { GroupItem } from "./GroupItem";
-import { NewTabDropZone } from "./NewTabDropZone";
+
+const NO_WORKSPACE_MATCH = "__no_workspace__";
 
 export function GroupStrip() {
 	const { workspaceId: activeWorkspaceId } = useParams({ strict: false });
@@ -44,19 +37,71 @@ export function GroupStrip() {
 	const activeTabIds = useTabsStore((s) => s.activeTabIds);
 	const tabHistoryStacks = useTabsStore((s) => s.tabHistoryStacks);
 	const { addTab, openPreset } = useTabsWithPresets();
-	const addChatTab = useTabsStore((s) => s.addChatTab);
+	const addChatMastraTab = useTabsStore((s) => s.addChatMastraTab);
+	const addBrowserTab = useTabsStore((s) => s.addBrowserTab);
 	const renameTab = useTabsStore((s) => s.renameTab);
 	const removeTab = useTabsStore((s) => s.removeTab);
 	const setActiveTab = useTabsStore((s) => s.setActiveTab);
 	const movePaneToTab = useTabsStore((s) => s.movePaneToTab);
 	const movePaneToNewTab = useTabsStore((s) => s.movePaneToNewTab);
 	const reorderTabs = useTabsStore((s) => s.reorderTabs);
+	const setPaneStatus = useTabsStore((s) => s.setPaneStatus);
 
-	const hasAiChat = useFeatureFlagEnabled(FEATURE_FLAGS.AI_CHAT);
+	const setTabAutoTitle = useTabsStore((s) => s.setTabAutoTitle);
+	const setPaneAutoTitle = useTabsStore((s) => s.setPaneAutoTitle);
 	const { presets } = usePresets();
-	const isDark = useIsDarkTheme();
 	const navigate = useNavigate();
-	const [dropdownOpen, setDropdownOpen] = useState(false);
+
+	const scrollContainerRef = useRef<HTMLDivElement>(null);
+	const tabsTrackRef = useRef<HTMLDivElement>(null);
+	const [hasHorizontalOverflow, setHasHorizontalOverflow] = useState(false);
+	const utils = electronTrpc.useUtils();
+	const { data: showPresetsBar } =
+		electronTrpc.settings.getShowPresetsBar.useQuery();
+	const { data: useCompactTerminalAddButton } =
+		electronTrpc.settings.getUseCompactTerminalAddButton.useQuery();
+	const setShowPresetsBar = electronTrpc.settings.setShowPresetsBar.useMutation(
+		{
+			onMutate: async ({ enabled }) => {
+				await utils.settings.getShowPresetsBar.cancel();
+				const previous = utils.settings.getShowPresetsBar.getData();
+				utils.settings.getShowPresetsBar.setData(undefined, enabled);
+				return { previous };
+			},
+			onError: (_err, _vars, context) => {
+				if (context?.previous !== undefined) {
+					utils.settings.getShowPresetsBar.setData(undefined, context.previous);
+				}
+			},
+			onSettled: () => {
+				utils.settings.getShowPresetsBar.invalidate();
+			},
+		},
+	);
+	const setUseCompactTerminalAddButton =
+		electronTrpc.settings.setUseCompactTerminalAddButton.useMutation({
+			onMutate: async ({ enabled }) => {
+				await utils.settings.getUseCompactTerminalAddButton.cancel();
+				const previous =
+					utils.settings.getUseCompactTerminalAddButton.getData();
+				utils.settings.getUseCompactTerminalAddButton.setData(
+					undefined,
+					enabled,
+				);
+				return { previous };
+			},
+			onError: (_err, _vars, context) => {
+				if (context?.previous !== undefined) {
+					utils.settings.getUseCompactTerminalAddButton.setData(
+						undefined,
+						context.previous,
+					);
+				}
+			},
+			onSettled: () => {
+				utils.settings.getUseCompactTerminalAddButton.invalidate();
+			},
+		});
 
 	const tabs = useMemo(
 		() =>
@@ -89,6 +134,85 @@ export function GroupStrip() {
 		return result;
 	}, [panes]);
 
+	// Sync Electric session titles → tab and pane names for Mastra chat panes in this workspace
+	const chatSessionTargets = useMemo(() => {
+		const map = new Map<
+			string,
+			{ tabIds: Set<string>; paneIds: Set<string> }
+		>();
+		for (const pane of Object.values(panes)) {
+			if (pane.type === "chat-mastra" && pane.chatMastra?.sessionId) {
+				const tab = tabs.find((t) => t.id === pane.tabId);
+				if (!tab) continue;
+				const sessionId = pane.chatMastra.sessionId;
+				const existing = map.get(sessionId) ?? {
+					tabIds: new Set<string>(),
+					paneIds: new Set<string>(),
+				};
+				existing.tabIds.add(tab.id);
+				existing.paneIds.add(pane.id);
+				map.set(sessionId, existing);
+			}
+		}
+		return map;
+	}, [panes, tabs]);
+	const targetSessionIds = useMemo(
+		() => Array.from(chatSessionTargets.keys()),
+		[chatSessionTargets],
+	);
+	const targetSessionIdsKey = targetSessionIds.join(",");
+	const shouldSyncChatTitles =
+		Boolean(activeWorkspaceId) && targetSessionIds.length > 0;
+
+	const collections = useCollections();
+	const { data: chatSessions } = useLiveQuery(
+		(q) =>
+			q
+				.from({ chatSessions: collections.chatSessions })
+				.where(({ chatSessions }) => {
+					if (!shouldSyncChatTitles) {
+						return eq(chatSessions.workspaceId, NO_WORKSPACE_MATCH);
+					}
+					const [firstSessionId, ...restSessionIds] = targetSessionIds;
+					if (!firstSessionId) {
+						return eq(chatSessions.workspaceId, NO_WORKSPACE_MATCH);
+					}
+					let predicate = eq(chatSessions.id, firstSessionId);
+					for (const sessionId of restSessionIds) {
+						predicate = or(predicate, eq(chatSessions.id, sessionId));
+					}
+					return predicate;
+				})
+				.select(({ chatSessions }) => ({
+					id: chatSessions.id,
+					title: chatSessions.title,
+					workspaceId: chatSessions.workspaceId,
+				})),
+		[collections.chatSessions, shouldSyncChatTitles, targetSessionIdsKey],
+	);
+
+	useEffect(() => {
+		if (!shouldSyncChatTitles) return;
+		if (!chatSessions) return;
+		for (const session of chatSessions) {
+			const target = chatSessionTargets.get(session.id);
+			const title = session.title?.trim();
+			if (!target || !title) continue;
+			for (const tabId of target.tabIds) {
+				setTabAutoTitle(tabId, title);
+			}
+			for (const paneId of target.paneIds) {
+				setPaneAutoTitle(paneId, title);
+			}
+		}
+	}, [
+		chatSessions,
+		chatSessionTargets,
+		setPaneAutoTitle,
+		setTabAutoTitle,
+		shouldSyncChatTitles,
+	]);
+
 	const handleAddGroup = () => {
 		if (!activeWorkspaceId) return;
 		addTab(activeWorkspaceId);
@@ -96,19 +220,25 @@ export function GroupStrip() {
 
 	const handleAddChat = () => {
 		if (!activeWorkspaceId) return;
-		addChatTab(activeWorkspaceId);
+		addChatMastraTab(activeWorkspaceId);
 	};
 
-	const handleSelectPreset = (preset: Parameters<typeof openPreset>[1]) => {
+	const handleAddBrowser = () => {
 		if (!activeWorkspaceId) return;
-		openPreset(activeWorkspaceId, preset);
-		setDropdownOpen(false);
+		addBrowserTab(activeWorkspaceId);
 	};
 
-	const handleOpenPresetsSettings = () => {
+	const handleOpenPreset = useCallback(
+		(preset: TerminalPreset) => {
+			if (!activeWorkspaceId) return;
+			openPreset(activeWorkspaceId, preset, { target: "active-tab" });
+		},
+		[activeWorkspaceId, openPreset],
+	);
+
+	const handleOpenPresetsSettings = useCallback(() => {
 		navigate({ to: "/settings/presets" });
-		setDropdownOpen(false);
-	};
+	}, [navigate]);
 
 	const handleSelectGroup = (tabId: string) => {
 		if (activeWorkspaceId) {
@@ -124,6 +254,14 @@ export function GroupStrip() {
 		renameTab(tabId, newName);
 	};
 
+	const handleMarkTabAsUnread = (tabId: string) => {
+		for (const pane of Object.values(panes)) {
+			if (pane.tabId === tabId) {
+				setPaneStatus(pane.id, "review");
+			}
+		}
+	};
+
 	const handleReorderTabs = useCallback(
 		(fromIndex: number, toIndex: number) => {
 			if (activeWorkspaceId) {
@@ -133,12 +271,6 @@ export function GroupStrip() {
 		[activeWorkspaceId, reorderTabs],
 	);
 
-	// Tab navigation - find which tabs are adjacent to active
-	const activeTabIndex = useMemo(() => {
-		if (!activeTabId) return -1;
-		return tabs.findIndex((t) => t.id === activeTabId);
-	}, [tabs, activeTabId]);
-
 	const checkIsLastPaneInTab = useCallback((paneId: string) => {
 		// Get fresh panes from store to avoid stale closure issues during drag-drop
 		const freshPanes = useTabsStore.getState().panes;
@@ -147,139 +279,106 @@ export function GroupStrip() {
 		return isLastPaneInTab(freshPanes, pane.tabId);
 	}, []);
 
+	const updateOverflow = useCallback(() => {
+		const container = scrollContainerRef.current;
+		const track = tabsTrackRef.current;
+		if (!container || !track) return;
+		setHasHorizontalOverflow(track.scrollWidth > container.clientWidth + 1);
+	}, []);
+
+	useLayoutEffect(() => {
+		const container = scrollContainerRef.current;
+		const track = tabsTrackRef.current;
+		if (!container || !track) return;
+
+		updateOverflow();
+		const resizeObserver = new ResizeObserver(updateOverflow);
+		resizeObserver.observe(container);
+		resizeObserver.observe(track);
+		window.addEventListener("resize", updateOverflow);
+
+		return () => {
+			resizeObserver.disconnect();
+			window.removeEventListener("resize", updateOverflow);
+		};
+	}, [updateOverflow]);
+
+	useEffect(() => {
+		requestAnimationFrame(updateOverflow);
+	}, [updateOverflow]);
+
+	const useCompactAddButton =
+		useCompactTerminalAddButton ?? DEFAULT_USE_COMPACT_TERMINAL_ADD_BUTTON;
+
+	const plusControl = (
+		<AddTabButton
+			useCompactAddButton={useCompactAddButton}
+			showPresetsBar={showPresetsBar ?? DEFAULT_SHOW_PRESETS_BAR}
+			presets={presets}
+			onDropToNewTab={movePaneToNewTab}
+			isLastPaneInTab={checkIsLastPaneInTab}
+			onAddTerminal={handleAddGroup}
+			onAddChat={handleAddChat}
+			onAddBrowser={handleAddBrowser}
+			onOpenPreset={handleOpenPreset}
+			onConfigurePresets={handleOpenPresetsSettings}
+			onToggleShowPresetsBar={(enabled) =>
+				setShowPresetsBar.mutate({ enabled })
+			}
+			onToggleCompactAddButton={(enabled) =>
+				setUseCompactTerminalAddButton.mutate({ enabled })
+			}
+		/>
+	);
+
 	return (
-		<div className="flex items-center h-10 flex-1 min-w-0">
-			{tabs.length > 0 && (
-				<div
-					className="flex items-center h-full overflow-x-auto overflow-y-hidden border-l border-border"
-					style={{ scrollbarWidth: "none" }}
-				>
-					{tabs.map((tab, index) => {
-						const isPrevOfActive = index === activeTabIndex - 1;
-						const isNextOfActive = index === activeTabIndex + 1;
-						return (
-							<div
-								key={tab.id}
-								className="h-full shrink-0"
-								style={{ width: "160px" }}
-							>
-								<GroupItem
-									tab={tab}
-									index={index}
-									isActive={tab.id === activeTabId}
-									status={tabStatusMap.get(tab.id) ?? null}
-									onSelect={() => handleSelectGroup(tab.id)}
-									onClose={() => handleCloseGroup(tab.id)}
-									onRename={(newName) => handleRenameGroup(tab.id, newName)}
-									onPaneDrop={(paneId) => movePaneToTab(paneId, tab.id)}
-									onReorder={handleReorderTabs}
-									navHint={
-										isPrevOfActive
-											? "prev"
-											: isNextOfActive
-												? "next"
-												: undefined
-									}
-								/>
-							</div>
-						);
-					})}
-				</div>
-			)}
-			<NewTabDropZone
-				onDrop={(paneId) => movePaneToNewTab(paneId)}
-				isLastPaneInTab={checkIsLastPaneInTab}
+		<div className="flex h-10 min-w-0 flex-1 items-stretch">
+			<div
+				ref={scrollContainerRef}
+				className="flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden"
+				style={{ scrollbarWidth: "none" }}
 			>
-				<DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
-					<div className="flex items-center shrink-0">
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<Button
-									variant="outline"
-									className="h-7 rounded-r-none pl-2 pr-1.5 gap-1 text-xs"
-									onClick={handleAddGroup}
-								>
-									<BsTerminalPlus className="size-3.5" />
-									Terminal
-								</Button>
-							</TooltipTrigger>
-							<TooltipContent side="top" sideOffset={4}>
-								<HotkeyTooltipContent
-									label="New Terminal"
-									hotkeyId="NEW_GROUP"
-								/>
-							</TooltipContent>
-						</Tooltip>
-						{hasAiChat && (
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<Button
-										variant="outline"
-										className="h-7 rounded-none border-l-0 px-1.5 gap-1 text-xs"
-										onClick={handleAddChat}
+				<div ref={tabsTrackRef} className="flex items-stretch">
+					{tabs.length > 0 && (
+						<div className="flex items-stretch h-full shrink-0">
+							{tabs.map((tab, index) => {
+								return (
+									<div
+										key={tab.id}
+										className="h-full shrink-0"
+										style={{ width: "160px" }}
 									>
-										<TbMessageCirclePlus className="size-3.5" />
-										Chat
-									</Button>
-								</TooltipTrigger>
-								<TooltipContent side="top" sideOffset={4}>
-									<HotkeyTooltipContent label="New Chat" hotkeyId="NEW_CHAT" />
-								</TooltipContent>
-							</Tooltip>
-						)}
-						<DropdownMenuTrigger asChild>
-							<Button
-								variant="outline"
-								size="icon"
-								className="size-7 rounded-l-none border-l-0 px-1"
-							>
-								<HiMiniChevronDown className="size-3" />
-							</Button>
-						</DropdownMenuTrigger>
-					</div>
-					<DropdownMenuContent align="end" className="w-56">
-						{presets.length > 0 && (
-							<>
-								{presets.map((preset, index) => {
-									const presetIcon = getPresetIcon(preset.name, isDark);
-									return (
-										<DropdownMenuItem
-											key={preset.id}
-											onClick={() => handleSelectPreset(preset)}
-											className="gap-2"
-										>
-											{presetIcon ? (
-												<img
-													src={presetIcon}
-													alt=""
-													className="size-4 object-contain"
-												/>
-											) : (
-												<HiMiniCommandLine className="size-4" />
-											)}
-											<span className="truncate">
-												{preset.name || "default"}
-											</span>
-											{preset.isDefault && (
-												<HiStar className="size-3 text-yellow-500 flex-shrink-0" />
-											)}
-											<PresetMenuItemShortcut index={index} />
-										</DropdownMenuItem>
-									);
-								})}
-								<DropdownMenuSeparator />
-							</>
-						)}
-						<DropdownMenuItem
-							onClick={handleOpenPresetsSettings}
-							className="gap-2"
-						>
-							<HiMiniCog6Tooth className="size-4" />
-							<span>Configure Presets</span>
-						</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenu>
-			</NewTabDropZone>
+										<GroupItem
+											tab={tab}
+											index={index}
+											isActive={tab.id === activeTabId}
+											status={tabStatusMap.get(tab.id) ?? null}
+											onSelect={() => handleSelectGroup(tab.id)}
+											onClose={() => handleCloseGroup(tab.id)}
+											onRename={(newName) => handleRenameGroup(tab.id, newName)}
+											onMarkAsUnread={() => handleMarkTabAsUnread(tab.id)}
+											onPaneDrop={(paneId) => movePaneToTab(paneId, tab.id)}
+											onReorder={handleReorderTabs}
+										/>
+									</div>
+								);
+							})}
+						</div>
+					)}
+					{hasHorizontalOverflow ? (
+						<div
+							className={`h-full shrink-0 ${
+								!useCompactAddButton ? "w-[220px]" : "w-10"
+							}`}
+						/>
+					) : (
+						<div className="shrink-0">{plusControl}</div>
+					)}
+				</div>
+			</div>
+			{hasHorizontalOverflow && (
+				<div className="shrink-0 bg-background/95 pr-1">{plusControl}</div>
+			)}
 		</div>
 	);
 }

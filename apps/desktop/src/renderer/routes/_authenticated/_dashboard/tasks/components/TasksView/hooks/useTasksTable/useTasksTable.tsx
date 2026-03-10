@@ -4,6 +4,7 @@ import type {
 	SelectUser,
 } from "@superset/db/schema";
 import { Badge } from "@superset/ui/badge";
+import { Checkbox } from "@superset/ui/checkbox";
 import { eq, isNull } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import {
@@ -14,13 +15,16 @@ import {
 	getExpandedRowModel,
 	getFilteredRowModel,
 	getGroupedRowModel,
+	type RowSelectionState,
 	type Table,
 	useReactTable,
 } from "@tanstack/react-table";
 import { format } from "date-fns";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { HiChevronRight } from "react-icons/hi2";
+import { getSlugColumnWidth } from "renderer/lib/slug-width";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
+import { create } from "zustand";
 import {
 	StatusIcon,
 	type StatusType,
@@ -39,6 +43,22 @@ export type TaskWithStatus = SelectTask & {
 
 const columnHelper = createColumnHelper<TaskWithStatus>();
 
+const useRowSelectionStore = create<{
+	rowSelection: RowSelectionState;
+	setRowSelection: (
+		updater:
+			| RowSelectionState
+			| ((prev: RowSelectionState) => RowSelectionState),
+	) => void;
+}>((set) => ({
+	rowSelection: {},
+	setRowSelection: (updater) =>
+		set((state) => ({
+			rowSelection:
+				typeof updater === "function" ? updater(state.rowSelection) : updater,
+		})),
+}));
+
 interface UseTasksTableParams {
 	filterTab: TabValue;
 	searchQuery: string;
@@ -53,11 +73,19 @@ export function useTasksTable({
 	table: Table<TaskWithStatus>;
 	isLoading: boolean;
 	slugColumnWidth: string;
+	rowSelection: RowSelectionState;
+	setRowSelection: (
+		updater:
+			| RowSelectionState
+			| ((prev: RowSelectionState) => RowSelectionState),
+	) => void;
 } {
 	const collections = useCollections();
 	const [grouping, setGrouping] = useState<string[]>(["status"]);
 	const [expanded, setExpanded] = useState<ExpandedState>(true);
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+	const rowSelection = useRowSelectionStore((s) => s.rowSelection);
+	const setRowSelection = useRowSelectionStore((s) => s.setRowSelection);
 
 	const { data: allData, isLoading } = useLiveQuery(
 		(q) =>
@@ -83,7 +111,7 @@ export function useTasksTable({
 		return [...allData].sort(compareTasks);
 	}, [allData]);
 
-	const { search } = useHybridSearch<TaskWithStatus>(sortedData);
+	const { search } = useHybridSearch(sortedData);
 
 	const data = useMemo(() => {
 		if (!searchQuery.trim()) {
@@ -93,6 +121,7 @@ export function useTasksTable({
 		return results.map((r) => r.item);
 	}, [sortedData, searchQuery, search]);
 
+	const isFirstMount = useRef(true);
 	useEffect(() => {
 		const newColumnFilters: ColumnFiltersState = [];
 		if (filterTab !== "all") {
@@ -108,21 +137,17 @@ export function useTasksTable({
 			});
 		}
 		setColumnFilters(newColumnFilters);
-	}, [filterTab, assigneeFilter]);
+		if (isFirstMount.current) {
+			isFirstMount.current = false;
+		} else {
+			setRowSelection({});
+		}
+	}, [filterTab, assigneeFilter, setRowSelection]);
 
-	const slugColumnWidth = useMemo(() => {
-		if (!data || data.length === 0) return "5rem";
-
-		const longestSlug = data.reduce((longest, task) => {
-			return task.slug.length > longest.length ? task.slug : longest;
-		}, "");
-
-		const REM_PER_CHAR = 0.5 * 0.75;
-		const PADDING_REM = 0.5;
-		const width = longestSlug.length * REM_PER_CHAR + PADDING_REM;
-
-		return `${Math.ceil(width * 10) / 10}rem`;
-	}, [data]);
+	const slugColumnWidth = useMemo(
+		() => getSlugColumnWidth((data ?? []).map((t) => t.slug)),
+		[data],
+	);
 
 	const columns = useMemo(
 		() => [
@@ -187,8 +212,19 @@ export function useTasksTable({
 			columnHelper.display({
 				id: "checkbox",
 				header: "",
-				cell: () => {
-					return <div className="w-4" />;
+				cell: ({ row }) => {
+					if (row.getIsGrouped()) return null;
+					return (
+						<Checkbox
+							checked={row.getIsSelected()}
+							onCheckedChange={(checked) =>
+								row.toggleSelected(Boolean(checked))
+							}
+							onClick={(e) => e.stopPropagation()}
+							aria-label="Select task"
+							className="cursor-pointer"
+						/>
+					);
 				},
 			}),
 
@@ -205,7 +241,7 @@ export function useTasksTable({
 				cell: (info) => {
 					if (info.cell.getIsPlaceholder()) return null;
 					return (
-						<span className="text-xs text-muted-foreground shrink-0">
+						<span className="text-xs text-muted-foreground truncate min-w-0">
 							{info.getValue()}
 						</span>
 					);
@@ -249,7 +285,13 @@ export function useTasksTable({
 				header: "Assignee",
 				filterFn: (row, _columnId, filterValue: string) => {
 					if (filterValue === "unassigned") {
-						return row.original.assigneeId === null;
+						return (
+							row.original.assigneeId === null &&
+							row.original.assigneeExternalId === null
+						);
+					}
+					if (filterValue.startsWith("ext:")) {
+						return row.original.assigneeExternalId === filterValue.slice(4);
 					}
 					return row.original.assigneeId === filterValue;
 				},
@@ -283,7 +325,11 @@ export function useTasksTable({
 			grouping,
 			expanded,
 			columnFilters,
+			rowSelection,
 		},
+		getRowId: (row) => row.id,
+		enableRowSelection: (row) => !row.getIsGrouped(),
+		onRowSelectionChange: setRowSelection,
 		onGroupingChange: setGrouping,
 		onExpandedChange: setExpanded,
 		onColumnFiltersChange: setColumnFilters,
@@ -294,5 +340,5 @@ export function useTasksTable({
 		autoResetExpanded: false,
 	});
 
-	return { table, isLoading, slugColumnWidth };
+	return { table, isLoading, slugColumnWidth, rowSelection, setRowSelection };
 }

@@ -51,12 +51,14 @@ export const POSTHOG_COOKIE_NAME = "superset";
 export const FEATURE_FLAGS = {
 	/** Gates access to experimental Electric SQL tasks feature. */
 	ELECTRIC_TASKS_ACCESS: "electric-tasks-access",
-	/** Gates access to billing features. */
-	BILLING_ENABLED: "billing-enabled",
 	/** Gates access to GitHub integration (currently buggy, internal only). */
 	GITHUB_INTEGRATION_ACCESS: "github-integration-access",
-	/** Gates access to AI chat (@superset.sh internal only). */
-	AI_CHAT: "ai-chat",
 	/** Gates access to Slack integration (internal only). */
 	SLACK_INTEGRATION_ACCESS: "slack-integration-access",
+	/** Gates access to Cloud features (environment variables, sandboxes). */
+	CLOUD_ACCESS: "cloud-access",
+	/** When enabled, blocks remote agent execution on the desktop (e.g., for enterprise orgs). */
+	DISABLE_REMOTE_AGENT: "disable-remote-agent",
+	/** Gates access to V2 Cloud features (host-service, cloud sprites). */
+	V2_CLOUD: "v2-cloud",
 } as const;

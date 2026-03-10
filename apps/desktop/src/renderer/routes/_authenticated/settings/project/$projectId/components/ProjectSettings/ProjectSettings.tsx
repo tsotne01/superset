@@ -1,4 +1,16 @@
 import type { BranchPrefixMode } from "@superset/local-db";
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+	AlertDialogTrigger,
+} from "@superset/ui/alert-dialog";
+import { Button } from "@superset/ui/button";
 import { Input } from "@superset/ui/input";
 import { Label } from "@superset/ui/label";
 import {
@@ -8,22 +20,38 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@superset/ui/select";
+import { toast } from "@superset/ui/sonner";
 import { Switch } from "@superset/ui/switch";
 import { cn } from "@superset/ui/utils";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
-import { HiOutlineCog6Tooth, HiOutlinePaintBrush } from "react-icons/hi2";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+	HiOutlineCog6Tooth,
+	HiOutlineFolderOpen,
+	HiOutlinePaintBrush,
+} from "react-icons/hi2";
+import { LuImagePlus, LuTrash2 } from "react-icons/lu";
 import { electronTrpc } from "renderer/lib/electron-trpc";
+import {
+	useImportAllWorktrees,
+	useOpenExternalWorktree,
+} from "renderer/react-query/workspaces";
 import {
 	PROJECT_COLOR_DEFAULT,
 	PROJECT_COLORS,
 } from "shared/constants/project-colors";
 import { resolveBranchPrefix, sanitizeSegment } from "shared/utils/branch";
 import { ClickablePath } from "../../../../components/ClickablePath";
+import {
+	useDefaultWorktreePath,
+	WorktreeLocationPicker,
+} from "../../../../components/WorktreeLocationPicker";
 import { BRANCH_PREFIX_MODE_LABELS_WITH_DEFAULT } from "../../../../utils/branch-prefix";
 import { ScriptsEditor } from "./components/ScriptsEditor";
 
-function SettingsSection({
+const REPO_DEFAULT_BASE_BRANCH = "__repo_default__";
+
+export function SettingsSection({
 	icon,
 	title,
 	description,
@@ -59,6 +87,11 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
 	const { data: project } = electronTrpc.projects.get.useQuery({
 		id: projectId,
 	});
+	const { data: branchData, isLoading: isBranchDataLoading } =
+		electronTrpc.projects.getBranches.useQuery(
+			{ projectId },
+			{ enabled: !!projectId },
+		);
 	const { data: gitAuthor } = electronTrpc.projects.getGitAuthor.useQuery({
 		id: projectId,
 	});
@@ -69,6 +102,9 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
 	const [customPrefixInput, setCustomPrefixInput] = useState(
 		project?.branchPrefixCustom ?? "",
 	);
+	const [selectedWorktreePath, setSelectedWorktreePath] = useState<
+		string | null
+	>(null);
 
 	useEffect(() => {
 		setCustomPrefixInput(project?.branchPrefixCustom ?? "");
@@ -83,6 +119,44 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
 			utils.workspaces.getAllGrouped.invalidate();
 		},
 	});
+
+	const setProjectIcon = electronTrpc.projects.setProjectIcon.useMutation({
+		onError: (err) => {
+			console.error("[project-settings/setProjectIcon] Failed:", err);
+		},
+		onSettled: () => {
+			utils.projects.get.invalidate({ id: projectId });
+			utils.workspaces.getAllGrouped.invalidate();
+		},
+	});
+
+	const fileInputRef = useRef<HTMLInputElement>(null);
+
+	const handleIconUpload = useCallback(() => {
+		fileInputRef.current?.click();
+	}, []);
+
+	const handleFileChange = useCallback(
+		(e: React.ChangeEvent<HTMLInputElement>) => {
+			const file = e.target.files?.[0];
+			if (!file) return;
+
+			const reader = new FileReader();
+			reader.onload = () => {
+				const dataUrl = reader.result as string;
+				setProjectIcon.mutate({ id: projectId, icon: dataUrl });
+			};
+			reader.readAsDataURL(file);
+
+			// Reset input so the same file can be re-selected
+			e.target.value = "";
+		},
+		[projectId, setProjectIcon],
+	);
+
+	const handleRemoveIcon = useCallback(() => {
+		setProjectIcon.mutate({ id: projectId, icon: null });
+	}, [projectId, setProjectIcon]);
 
 	const handleBranchPrefixModeChange = (value: string) => {
 		if (value === "default") {
@@ -116,6 +190,57 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
 		});
 	};
 
+	const handleWorkspaceBaseBranchChange = (value: string) => {
+		updateProject.mutate({
+			id: projectId,
+			patch: {
+				workspaceBaseBranch: value === REPO_DEFAULT_BASE_BRANCH ? null : value,
+			},
+		});
+	};
+
+	const { data: globalWorktreeBaseDir } =
+		electronTrpc.settings.getWorktreeBaseDir.useQuery();
+	const defaultWorktreePath = useDefaultWorktreePath();
+	const globalPath = globalWorktreeBaseDir ?? defaultWorktreePath;
+
+	const { data: externalWorktrees = [], isLoading: isExternalLoading } =
+		electronTrpc.workspaces.getExternalWorktrees.useQuery(
+			{ projectId },
+			{ enabled: !!projectId },
+		);
+	const importAllWorktrees = useImportAllWorktrees();
+	const openExternalWorktree = useOpenExternalWorktree();
+
+	const handleImportAll = async () => {
+		try {
+			const result = await importAllWorktrees.mutateAsync({ projectId });
+			toast.success(
+				`Imported ${result.imported} workspace${result.imported === 1 ? "" : "s"}`,
+			);
+		} catch (err) {
+			toast.error(
+				err instanceof Error ? err.message : "Failed to import worktrees",
+			);
+		}
+	};
+
+	const handleImportWorktree = async (path: string, branch: string) => {
+		toast.promise(
+			openExternalWorktree.mutateAsync({
+				projectId,
+				worktreePath: path,
+				branch,
+			}),
+			{
+				loading: "Importing worktree...",
+				success: `Imported ${branch}`,
+				error: (err) =>
+					err instanceof Error ? err.message : "Failed to import worktree",
+			},
+		);
+	};
+
 	const getPreviewPrefix = (
 		mode: BranchPrefixMode | "default",
 	): string | null => {
@@ -143,6 +268,17 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
 
 	const currentMode = project.branchPrefixMode ?? "default";
 	const previewPrefix = getPreviewPrefix(currentMode);
+	const repoDefaultBranch =
+		branchData?.defaultBranch ?? project.defaultBranch ?? "main";
+	const workspaceBaseBranchValue =
+		project.workspaceBaseBranch ?? REPO_DEFAULT_BASE_BRANCH;
+	const workspaceBaseBranchMissing =
+		!isBranchDataLoading &&
+		!!project.workspaceBaseBranch &&
+		!!branchData &&
+		!branchData.branches.some(
+			(branch) => branch.name === project.workspaceBaseBranch,
+		);
 
 	return (
 		<div className="p-6 max-w-4xl w-full select-text">
@@ -205,6 +341,169 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
 					</div>
 				</SettingsSection>
 
+				<SettingsSection
+					icon={<HiOutlineCog6Tooth className="h-4 w-4" />}
+					title="Workspace Base Branch"
+					description="Set the default base branch for new workspaces in this repository."
+				>
+					<div className="flex items-center justify-between gap-4">
+						<div className="space-y-0.5">
+							<Label className="text-sm font-medium">Default Base Branch</Label>
+							<p className="text-xs text-muted-foreground">
+								Used when creating a workspace unless you choose a one-off base
+								branch.
+							</p>
+						</div>
+						<Select
+							value={workspaceBaseBranchValue}
+							onValueChange={handleWorkspaceBaseBranchChange}
+							disabled={updateProject.isPending || isBranchDataLoading}
+						>
+							<SelectTrigger className="w-[260px]">
+								{isBranchDataLoading ? (
+									<span className="text-muted-foreground">Loading...</span>
+								) : (
+									<SelectValue />
+								)}
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value={REPO_DEFAULT_BASE_BRANCH}>
+									Use repository default ({repoDefaultBranch})
+								</SelectItem>
+								{workspaceBaseBranchMissing && project.workspaceBaseBranch && (
+									<SelectItem value={project.workspaceBaseBranch}>
+										{project.workspaceBaseBranch} (missing)
+									</SelectItem>
+								)}
+								{(branchData?.branches ?? []).map((branch) => (
+									<SelectItem key={branch.name} value={branch.name}>
+										{branch.name}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+					</div>
+					{workspaceBaseBranchMissing && (
+						<p className="text-xs text-destructive">
+							Branch "{project.workspaceBaseBranch}" no longer exists. New
+							workspaces will fall back to "{repoDefaultBranch}".
+						</p>
+					)}
+				</SettingsSection>
+
+				<SettingsSection
+					icon={<HiOutlineFolderOpen className="h-4 w-4" />}
+					title="Worktrees"
+					description="Manage worktree location and import existing worktrees."
+				>
+					<WorktreeLocationPicker
+						currentPath={project.worktreeBaseDir}
+						defaultPathLabel={`Using global default: ${globalPath}`}
+						dialogTitle="Select worktree location for this project"
+						defaultBrowsePath={project.worktreeBaseDir ?? globalWorktreeBaseDir}
+						disabled={updateProject.isPending}
+						onSelect={(path) =>
+							updateProject.mutate({
+								id: projectId,
+								patch: { worktreeBaseDir: path },
+							})
+						}
+						onReset={() =>
+							updateProject.mutate({
+								id: projectId,
+								patch: { worktreeBaseDir: null },
+							})
+						}
+					/>
+
+					{!isExternalLoading && externalWorktrees.length > 0 && (
+						<div className="flex items-center justify-between">
+							<div className="space-y-0.5">
+								<Label className="text-sm font-medium">Import Worktrees</Label>
+								<p className="text-xs text-muted-foreground">
+									{externalWorktrees.length} external worktree
+									{externalWorktrees.length === 1 ? "" : "s"} found on disk.
+								</p>
+							</div>
+							<div className="flex items-center gap-2">
+								<Select
+									value={selectedWorktreePath ?? "__all__"}
+									onValueChange={(value) =>
+										setSelectedWorktreePath(value === "__all__" ? null : value)
+									}
+								>
+									<SelectTrigger className="w-[220px]">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="__all__">
+											All worktrees ({externalWorktrees.length})
+										</SelectItem>
+										{externalWorktrees.map((wt) => (
+											<SelectItem key={wt.path} value={wt.path}>
+												{wt.branch}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+								{selectedWorktreePath ? (
+									<Button
+										size="sm"
+										className="w-22"
+										disabled={openExternalWorktree.isPending}
+										onClick={() => {
+											const wt = externalWorktrees.find(
+												(w) => w.path === selectedWorktreePath,
+											);
+											if (wt) {
+												handleImportWorktree(wt.path, wt.branch);
+												setSelectedWorktreePath(null);
+											}
+										}}
+									>
+										{openExternalWorktree.isPending ? "Importing..." : "Import"}
+									</Button>
+								) : (
+									<AlertDialog>
+										<AlertDialogTrigger asChild>
+											<Button
+												size="sm"
+												className="w-22"
+												disabled={importAllWorktrees.isPending}
+											>
+												{importAllWorktrees.isPending
+													? "Importing..."
+													: "Import all"}
+											</Button>
+										</AlertDialogTrigger>
+										<AlertDialogContent>
+											<AlertDialogHeader>
+												<AlertDialogTitle>
+													Import all worktrees
+												</AlertDialogTitle>
+												<AlertDialogDescription>
+													This will import {externalWorktrees.length} external
+													worktree
+													{externalWorktrees.length === 1 ? "" : "s"} into
+													Superset as workspaces. Each worktree on disk will be
+													tracked and appear in your sidebar. No files will be
+													modified.
+												</AlertDialogDescription>
+											</AlertDialogHeader>
+											<AlertDialogFooter>
+												<AlertDialogCancel>Cancel</AlertDialogCancel>
+												<AlertDialogAction onClick={handleImportAll}>
+													Import all
+												</AlertDialogAction>
+											</AlertDialogFooter>
+										</AlertDialogContent>
+									</AlertDialog>
+								)}
+							</div>
+						</div>
+					)}
+				</SettingsSection>
+
 				<div className="pt-3 border-t">
 					<ScriptsEditor projectId={project.id} />
 				</div>
@@ -257,6 +556,58 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
 									})
 								}
 							/>
+						</div>
+					</div>
+
+					{/* Project Icon */}
+					<div className="flex items-center justify-between">
+						<div className="space-y-0.5">
+							<Label className="text-sm font-medium">Project Icon</Label>
+							<p className="text-xs text-muted-foreground">
+								Upload a custom icon for the sidebar.
+							</p>
+						</div>
+						<div className="flex items-center gap-2">
+							{project.iconUrl && (
+								<img
+									src={project.iconUrl}
+									alt="Project icon"
+									className="size-8 rounded object-cover border"
+								/>
+							)}
+							<input
+								ref={fileInputRef}
+								type="file"
+								accept="image/png,image/jpeg,image/svg+xml,image/x-icon"
+								className="hidden"
+								onChange={handleFileChange}
+							/>
+							<button
+								type="button"
+								onClick={handleIconUpload}
+								disabled={setProjectIcon.isPending}
+								className={cn(
+									"flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border",
+									"hover:bg-muted transition-colors",
+								)}
+							>
+								<LuImagePlus className="size-4" />
+								{project.iconUrl ? "Replace" : "Upload"}
+							</button>
+							{project.iconUrl && (
+								<button
+									type="button"
+									onClick={handleRemoveIcon}
+									disabled={setProjectIcon.isPending}
+									className={cn(
+										"flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border",
+										"hover:bg-destructive/10 text-destructive transition-colors",
+									)}
+								>
+									<LuTrash2 className="size-4" />
+									Remove
+								</button>
+							)}
 						</div>
 					</div>
 				</SettingsSection>

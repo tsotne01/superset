@@ -4,7 +4,7 @@ import { ExternalLinkIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../../lib/utils";
 import { Loader } from "./loader";
-import { Shimmer } from "./shimmer";
+import { ShimmerLabel } from "./shimmer-label";
 
 type WebSearchToolState =
 	| "input-streaming"
@@ -35,12 +35,7 @@ export const WebSearchTool = ({
 		query && query.length > 40 ? `${query.slice(0, 37)}...` : query;
 
 	return (
-		<div
-			className={cn(
-				"overflow-hidden rounded-lg border border-border bg-muted/30",
-				className,
-			)}
-		>
+		<div className={cn("overflow-hidden rounded-md", className)}>
 			{/* Header */}
 			{/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: interactive tool header */}
 			<div
@@ -48,20 +43,16 @@ export const WebSearchTool = ({
 					"flex h-7 items-center justify-between px-2.5",
 					hasResults &&
 						!isPending &&
-						"cursor-pointer transition-colors duration-150 hover:bg-muted/50",
+						"cursor-pointer transition-colors duration-150 hover:bg-muted/30",
 				)}
 				onClick={() => hasResults && !isPending && setIsExpanded(!isExpanded)}
 			>
 				<div className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-xs">
 					<SearchIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
 					{isPending ? (
-						<Shimmer
-							as="span"
-							duration={1.2}
-							className="text-xs text-muted-foreground"
-						>
+						<ShimmerLabel className="text-xs text-muted-foreground">
 							Searching
-						</Shimmer>
+						</ShimmerLabel>
 					) : (
 						<span className="text-xs text-muted-foreground">Searched</span>
 					)}
@@ -88,10 +79,10 @@ export const WebSearchTool = ({
 
 			{/* Results list */}
 			{hasResults && isExpanded && (
-				<div className="max-h-[200px] overflow-y-auto border-t border-border">
+				<div className="mt-0.5 max-h-[200px] overflow-y-auto">
 					{results.map((result, idx) => (
 						<a
-							className="group flex items-start gap-2 px-2.5 py-1.5 transition-colors hover:bg-muted/50"
+							className="group flex items-start gap-2 px-2.5 py-1.5 transition-colors hover:bg-muted/30"
 							href={result.url}
 							key={`${result.url}-${idx}`}
 							rel="noopener noreferrer"

@@ -15,7 +15,7 @@ Superset provides an [MCP (Model Context Protocol)](https://modelcontextprotocol
 | **Workspaces** | Create, update, switch, delete, list, navigate workspaces |
 | **Devices** | List devices, projects, and app context |
 | **Organization** | List members and task statuses |
-| **AI Sessions** | Start autonomous Claude sessions and subagents |
+| **AI Sessions** | Start autonomous AI agent sessions (Claude, Codex, Gemini, OpenCode, Copilot, Cursor Agent) and subagents |
 
 ## Setup
 
@@ -38,8 +38,32 @@ gemini mcp add --transport http superset https://api.superset.sh/api/agent/mcp
 ```
 </Tab>
 <Tab value="Open Code">
-```bash title="terminal"
+Run `opencode mcp add` and follow the interactive prompts:
+
+```ansi title="terminal"
 opencode mcp add
+
+[2m┌[0m  Add MCP server
+[2m│[0m
+[2m◇[0m  Location
+[2m│[0m  [36mCurrent project[0m
+[2m│[0m
+[2m◇[0m  Enter MCP server name
+[2m│[0m  [36msuperset[0m
+[2m│[0m
+[2m◇[0m  Select MCP server type
+[2m│[0m  [36mRemote[0m
+[2m│[0m
+[2m◇[0m  Enter MCP server URL
+[2m│[0m  [36mhttps://api.superset.sh/api/agent/mcp[0m
+[2m│[0m
+[2m◇[0m  Does this server require OAuth authentication?
+[2m│[0m  [36mYes[0m
+[2m│[0m
+[2m◇[0m  Do you have a pre-registered client ID?
+[2m│[0m  [36mNo[0m
+[2m│[0m
+[2m└[0m  [32mMCP server added successfully[0m
 ```
 </Tab>
 </Tabs>
@@ -200,7 +224,7 @@ API keys grant full access to your organization. Keep them secret and never comm
 | `switch_workspace` | Switch to a different workspace |
 | `delete_workspace` | Delete a workspace |
 | `list_workspaces` | List all workspaces on a device |
-| `navigate_to_workspace` | Navigate the desktop app to a workspace |
+| `get_workspace_details` | Get detailed information about a workspace on a device, including its tabs and panes. Use this to discover pane IDs. |
 
 ### Device & Organization
 
@@ -215,8 +239,11 @@ API keys grant full access to your organization. Keep them secret and never comm
 
 | Tool | Description |
 |------|-------------|
-| `start_claude_session` | Start an autonomous Claude Code session for a task. Creates a new workspace with its own git branch and launches Claude with the task context. |
-| `start_claude_subagent` | Start a Claude Code subagent in an existing workspace. Adds a new terminal pane instead of creating a new workspace. |
+| `start_agent_session` | Start an autonomous AI agent session for a task. Supports multiple agents: Claude, Codex, Gemini, OpenCode, Copilot, and Cursor Agent (defaults to Claude). Launches the agent with task context in the specified workspace. When `paneId` is provided, adds a new terminal pane to the tab containing that pane (subagent behavior) instead of initializing the workspace. |
+
+## Chat Integration
+
+In the built-in chat panel, use the `/mcp` slash command to see your workspace's configured MCP servers — their names, transport type (local/remote), and current state (enabled/disabled/invalid). This reads from your workspace MCP config (`.mastracode/mcp.json` or `.mcp.json`).
 
 ## Example Usage
 
@@ -227,4 +254,5 @@ Once connected, you can ask your AI agent to:
 - "Create a new workspace for the auth feature"
 - "Show me who's online in my team"
 - "Start a Claude session on my MacBook to work on the auth task"
+- "Start a Codex session to fix the failing tests"
 - "Spin up a subagent to fix the failing tests"

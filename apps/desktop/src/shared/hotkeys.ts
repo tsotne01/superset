@@ -494,6 +494,26 @@ export const HOTKEYS = {
 		category: "Layout",
 		description: "Split the current pane along its longer side",
 	}),
+	SPLIT_WITH_CHAT: defineHotkey({
+		keys: "meta+shift+e",
+		label: "Split with New Chat",
+		category: "Layout",
+		description: "Split the current pane and open a new chat pane",
+		defaults: {
+			win32: "ctrl+alt+e",
+			linux: "ctrl+alt+e",
+		},
+	}),
+	SPLIT_WITH_BROWSER: defineHotkey({
+		keys: "meta+shift+s",
+		label: "Split with New Browser",
+		category: "Layout",
+		description: "Split the current pane and open a new browser pane",
+		defaults: {
+			win32: "ctrl+shift+alt+s",
+			linux: "ctrl+shift+alt+s",
+		},
+	}),
 	CLOSE_PANE: defineHotkey({
 		keys: "meta+w",
 		label: "Close Pane",
@@ -508,6 +528,12 @@ export const HOTKEYS = {
 		category: "Terminal",
 		description: "Search text in the active terminal",
 	}),
+	FIND_IN_FILE_VIEWER: defineHotkey({
+		keys: "meta+f",
+		label: "Find in File Viewer",
+		category: "Terminal",
+		description: "Search text in the rendered file viewer",
+	}),
 	NEW_GROUP: defineHotkey({
 		keys: "meta+t",
 		label: "New Terminal",
@@ -518,10 +544,26 @@ export const HOTKEYS = {
 		label: "New Chat",
 		category: "Terminal",
 	}),
+	REOPEN_TAB: defineHotkey({
+		keys: "meta+shift+r",
+		label: "Reopen Closed Tab",
+		category: "Terminal",
+	}),
+	NEW_BROWSER: defineHotkey({
+		keys: "meta+shift+b",
+		label: "New Browser",
+		category: "Terminal",
+	}),
 	CLOSE_TERMINAL: defineHotkey({
 		keys: "meta+w",
 		label: "Close Terminal",
 		category: "Terminal",
+	}),
+	CLOSE_TAB: defineHotkey({
+		keys: "meta+shift+w",
+		label: "Close Tab",
+		category: "Terminal",
+		description: "Close the current tab",
 	}),
 	CLEAR_TERMINAL: defineHotkey({
 		keys: "meta+k",
@@ -697,7 +739,7 @@ export const HOTKEYS = {
 		isHidden: true,
 	}),
 	CLOSE_WINDOW: defineHotkey({
-		keys: "meta+shift+w",
+		keys: "meta+shift+q",
 		label: "Close Window",
 		category: "Window",
 	}),
@@ -712,6 +754,43 @@ export const HOTKEYS = {
 		label: "Copy Path",
 		category: "Window",
 		description: "Copy the workspace path to the clipboard",
+	}),
+
+	QUICK_OPEN: defineHotkey({
+		keys: "meta+p",
+		label: "Quick Open File",
+		category: "Navigation",
+		description: "Search and open files in the current workspace",
+	}),
+	KEYWORD_SEARCH: defineHotkey({
+		keys: "meta+shift+f",
+		label: "Keyword Search",
+		category: "Navigation",
+		description:
+			"Search for keyword matches across files in the current workspace",
+	}),
+
+	// Chat
+	FIND_IN_CHAT: defineHotkey({
+		keys: "meta+f",
+		label: "Find in Chat",
+		category: "Terminal",
+		description: "Search text in the active chat",
+	}),
+	FOCUS_CHAT_INPUT: defineHotkey({
+		keys: "meta+j",
+		label: "Focus Chat Input",
+		category: "Terminal",
+	}),
+	CHAT_ADD_ATTACHMENT: defineHotkey({
+		keys: "meta+u",
+		label: "Add Attachment",
+		category: "Terminal",
+	}),
+	CHAT_LINK_ISSUE: defineHotkey({
+		keys: "meta+i",
+		label: "Link Issue",
+		category: "Terminal",
 	}),
 
 	// Help

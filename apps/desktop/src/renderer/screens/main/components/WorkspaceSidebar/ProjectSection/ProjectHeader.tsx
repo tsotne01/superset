@@ -18,6 +18,7 @@ import {
 	LuFolderOpen,
 	LuImage,
 	LuImageOff,
+	LuListPlus,
 	LuPalette,
 	LuPencil,
 	LuSettings,
@@ -43,6 +44,7 @@ interface ProjectHeaderProps {
 	githubOwner: string | null;
 	mainRepoPath: string;
 	hideImage: boolean;
+	iconUrl: string | null;
 	/** Whether the project section is collapsed (workspaces hidden) */
 	isCollapsed: boolean;
 	/** Whether the sidebar is in collapsed mode (icon-only view) */
@@ -59,6 +61,7 @@ export function ProjectHeader({
 	githubOwner,
 	mainRepoPath,
 	hideImage,
+	iconUrl,
 	isCollapsed,
 	isSidebarCollapsed = false,
 	onToggleCollapse,
@@ -73,7 +76,6 @@ export function ProjectHeader({
 
 	const closeProject = electronTrpc.projects.close.useMutation({
 		onMutate: async ({ id }) => {
-			// Check if we're viewing a workspace from this project BEFORE closing
 			let shouldNavigate = false;
 
 			if (params.workspaceId) {
@@ -82,8 +84,11 @@ export function ProjectHeader({
 						id: params.workspaceId,
 					});
 					shouldNavigate = currentWorkspace?.projectId === id;
-				} catch {
-					// Workspace might not exist, skip navigation
+				} catch (error) {
+					console.warn(
+						"[ProjectHeader] Failed to resolve current workspace before closing project",
+						error,
+					);
 				}
 			}
 
@@ -93,9 +98,7 @@ export function ProjectHeader({
 			utils.workspaces.getAllGrouped.invalidate();
 			utils.projects.getRecents.invalidate();
 
-			// Navigate away if we were viewing a workspace from the closed project
 			if (context?.shouldNavigate) {
-				// Find a workspace from a different project to navigate to
 				const groups = await utils.workspaces.getAllGrouped.fetch();
 				const otherWorkspace = groups
 					.flatMap((group) => group.workspaces)
@@ -104,7 +107,6 @@ export function ProjectHeader({
 				if (otherWorkspace) {
 					navigateToWorkspace(otherWorkspace.id, navigate);
 				} else {
-					// No other workspaces exist - go to workspace index
 					navigate({ to: "/workspace" });
 				}
 			}
@@ -150,7 +152,16 @@ export function ProjectHeader({
 		updateProject.mutate({ id: projectId, patch: { hideImage: !hideImage } });
 	};
 
-	// Color picker submenu used in both collapsed and expanded context menus
+	const createSection = electronTrpc.workspaces.createSection.useMutation({
+		onSuccess: () => utils.workspaces.getAllGrouped.invalidate(),
+		onError: (error) =>
+			toast.error(`Failed to create section: ${error.message}`),
+	});
+
+	const handleNewSection = () => {
+		createSection.mutate({ projectId, name: "New Section" });
+	};
+
 	const colorPickerSubmenu = (
 		<ContextMenuSub>
 			<ContextMenuSubTrigger>
@@ -184,7 +195,6 @@ export function ProjectHeader({
 		</ContextMenuSub>
 	);
 
-	// Collapsed sidebar: show just the thumbnail with tooltip and context menu
 	if (isSidebarCollapsed) {
 		return (
 			<>
@@ -205,6 +215,8 @@ export function ProjectHeader({
 										projectName={projectName}
 										projectColor={projectColor}
 										githubOwner={githubOwner}
+										iconUrl={iconUrl}
+										hideImage={hideImage}
 									/>
 								</button>
 							</TooltipTrigger>
@@ -234,6 +246,10 @@ export function ProjectHeader({
 							Project Settings
 						</ContextMenuItem>
 						{colorPickerSubmenu}
+						<ContextMenuItem onSelect={handleNewSection}>
+							<LuListPlus className="size-4 mr-2" strokeWidth={STROKE_WIDTH} />
+							New Section
+						</ContextMenuItem>
 						<ContextMenuSeparator />
 						<ContextMenuItem
 							onSelect={handleCloseProject}
@@ -270,7 +286,6 @@ export function ProjectHeader({
 							"hover:bg-muted/50 transition-colors",
 						)}
 					>
-						{/* Main clickable area */}
 						{rename.isRenaming ? (
 							<div className="flex items-center gap-2 flex-1 min-w-0 py-0.5">
 								<ProjectThumbnail
@@ -279,6 +294,7 @@ export function ProjectHeader({
 									projectColor={projectColor}
 									githubOwner={githubOwner}
 									hideImage={hideImage}
+									iconUrl={iconUrl}
 								/>
 								<RenameInput
 									value={rename.renameValue}
@@ -301,6 +317,7 @@ export function ProjectHeader({
 									projectColor={projectColor}
 									githubOwner={githubOwner}
 									hideImage={hideImage}
+									iconUrl={iconUrl}
 								/>
 								<span className="truncate">{projectName}</span>
 								<span className="text-xs text-muted-foreground tabular-nums font-normal">
@@ -309,7 +326,6 @@ export function ProjectHeader({
 							</button>
 						)}
 
-						{/* Add workspace button */}
 						<Tooltip delayDuration={500}>
 							<TooltipTrigger asChild>
 								<button
@@ -329,7 +345,6 @@ export function ProjectHeader({
 							</TooltipContent>
 						</Tooltip>
 
-						{/* Collapse chevron */}
 						<button
 							type="button"
 							onClick={onToggleCollapse}
@@ -368,6 +383,10 @@ export function ProjectHeader({
 							<LuImageOff className="size-4 mr-2" strokeWidth={STROKE_WIDTH} />
 						)}
 						{hideImage ? "Show Image" : "Hide Image"}
+					</ContextMenuItem>
+					<ContextMenuItem onSelect={handleNewSection}>
+						<LuListPlus className="size-4 mr-2" strokeWidth={STROKE_WIDTH} />
+						New Section
 					</ContextMenuItem>
 					<ContextMenuSeparator />
 					<ContextMenuItem

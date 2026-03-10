@@ -1,15 +1,21 @@
 import { snakeCamelMapper } from "@electric-sql/client";
 import type {
 	SelectAgentCommand,
+	SelectChatSession,
 	SelectDevicePresence,
+	SelectGithubPullRequest,
+	SelectGithubRepository,
 	SelectIntegrationConnection,
 	SelectInvitation,
 	SelectMember,
 	SelectOrganization,
-	SelectRepository,
+	SelectProject,
+	SelectSessionHost,
+	SelectSubscription,
 	SelectTask,
 	SelectTaskStatus,
 	SelectUser,
+	SelectWorkspace,
 } from "@superset/db/schema";
 import type { AppRouter } from "@superset/trpc";
 import { electricCollectionOptions } from "@tanstack/electric-db-collection";
@@ -17,23 +23,46 @@ import type { Collection } from "@tanstack/react-db";
 import { createCollection } from "@tanstack/react-db";
 import { createTRPCProxyClient, httpBatchLink } from "@trpc/client";
 import { env } from "renderer/env.renderer";
-import { getAuthToken } from "renderer/lib/auth-client";
+import { getAuthToken, getJwt } from "renderer/lib/auth-client";
 import superjson from "superjson";
 import { z } from "zod";
 
 const columnMapper = snakeCamelMapper();
-const electricUrl = `${env.NEXT_PUBLIC_API_URL}/api/electric/v1/shape`;
+
+const electricUrl = `${env.NEXT_PUBLIC_ELECTRIC_URL}/v1/shape`;
+
+const apiKeyDisplaySchema = z.object({
+	id: z.string(),
+	name: z.string().nullable(),
+	start: z.string().nullable(),
+	createdAt: z.coerce.date(),
+	lastRequest: z.coerce.date().nullable(),
+});
+
+type ApiKeyDisplay = z.infer<typeof apiKeyDisplaySchema>;
+
+type IntegrationConnectionDisplay = Omit<
+	SelectIntegrationConnection,
+	"accessToken" | "refreshToken"
+>;
 
 interface OrgCollections {
 	tasks: Collection<SelectTask>;
 	taskStatuses: Collection<SelectTaskStatus>;
-	repositories: Collection<SelectRepository>;
+	projects: Collection<SelectProject>;
+	workspaces: Collection<SelectWorkspace>;
 	members: Collection<SelectMember>;
 	users: Collection<SelectUser>;
 	invitations: Collection<SelectInvitation>;
 	agentCommands: Collection<SelectAgentCommand>;
 	devicePresence: Collection<SelectDevicePresence>;
-	integrationConnections: Collection<SelectIntegrationConnection>;
+	integrationConnections: Collection<IntegrationConnectionDisplay>;
+	subscriptions: Collection<SelectSubscription>;
+	apiKeys: Collection<ApiKeyDisplay>;
+	chatSessions: Collection<SelectChatSession>;
+	sessionHosts: Collection<SelectSessionHost>;
+	githubRepositories: Collection<SelectGithubRepository>;
+	githubPullRequests: Collection<SelectGithubPullRequest>;
 }
 
 // Per-org collections cache
@@ -53,46 +82,20 @@ const apiClient = createTRPCProxyClient<AppRouter>({
 	],
 });
 
+const electricHeaders = {
+	Authorization: () => {
+		const token = getJwt();
+		return token ? `Bearer ${token}` : "";
+	},
+};
+
 const organizationsCollection = createCollection(
 	electricCollectionOptions<SelectOrganization>({
 		id: "organizations",
 		shapeOptions: {
 			url: electricUrl,
 			params: { table: "auth.organizations" },
-			headers: {
-				Authorization: () => {
-					const token = getAuthToken();
-					return token ? `Bearer ${token}` : "";
-				},
-			},
-			columnMapper,
-		},
-		getKey: (item) => item.id,
-	}),
-);
-
-const apiKeyDisplaySchema = z.object({
-	id: z.string(),
-	name: z.string().nullable(),
-	start: z.string().nullable(),
-	createdAt: z.coerce.date(),
-	lastRequest: z.coerce.date().nullable(),
-});
-
-type ApiKeyDisplay = z.infer<typeof apiKeyDisplaySchema>;
-
-const apiKeysCollection = createCollection(
-	electricCollectionOptions<ApiKeyDisplay>({
-		id: "apikeys",
-		shapeOptions: {
-			url: electricUrl,
-			params: { table: "auth.apikeys" },
-			headers: {
-				Authorization: () => {
-					const token = getAuthToken();
-					return token ? `Bearer ${token}` : "";
-				},
-			},
+			headers: electricHeaders,
 			columnMapper,
 		},
 		getKey: (item) => item.id,
@@ -100,13 +103,6 @@ const apiKeysCollection = createCollection(
 );
 
 function createOrgCollections(organizationId: string): OrgCollections {
-	const headers = {
-		Authorization: () => {
-			const token = getAuthToken();
-			return token ? `Bearer ${token}` : "";
-		},
-	};
-
 	const tasks = createCollection(
 		electricCollectionOptions<SelectTask>({
 			id: `tasks-${organizationId}`,
@@ -116,7 +112,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 					table: "tasks",
 					organizationId,
 				},
-				headers,
+				headers: electricHeaders,
 				columnMapper,
 			},
 			getKey: (item) => item.id,
@@ -150,36 +146,42 @@ function createOrgCollections(organizationId: string): OrgCollections {
 					table: "task_statuses",
 					organizationId,
 				},
-				headers,
+				headers: electricHeaders,
 				columnMapper,
 			},
 			getKey: (item) => item.id,
 		}),
 	);
 
-	const repositories = createCollection(
-		electricCollectionOptions<SelectRepository>({
-			id: `repositories-${organizationId}`,
+	const projects = createCollection(
+		electricCollectionOptions<SelectProject>({
+			id: `projects-${organizationId}`,
 			shapeOptions: {
 				url: electricUrl,
 				params: {
-					table: "repositories",
+					table: "projects",
 					organizationId,
 				},
-				headers,
+				headers: electricHeaders,
 				columnMapper,
 			},
 			getKey: (item) => item.id,
-			onInsert: async ({ transaction }) => {
-				const item = transaction.mutations[0].modified;
-				const result = await apiClient.repository.create.mutate(item);
-				return { txid: result.txid };
+		}),
+	);
+
+	const workspaces = createCollection(
+		electricCollectionOptions<SelectWorkspace>({
+			id: `workspaces-${organizationId}`,
+			shapeOptions: {
+				url: electricUrl,
+				params: {
+					table: "workspaces",
+					organizationId,
+				},
+				headers: electricHeaders,
+				columnMapper,
 			},
-			onUpdate: async ({ transaction }) => {
-				const { modified } = transaction.mutations[0];
-				const result = await apiClient.repository.update.mutate(modified);
-				return { txid: result.txid };
-			},
+			getKey: (item) => item.id,
 		}),
 	);
 
@@ -192,7 +194,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 					table: "auth.members",
 					organizationId,
 				},
-				headers,
+				headers: electricHeaders,
 				columnMapper,
 			},
 			getKey: (item) => item.id,
@@ -208,7 +210,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 					table: "auth.users",
 					organizationId,
 				},
-				headers,
+				headers: electricHeaders,
 				columnMapper,
 			},
 			getKey: (item) => item.id,
@@ -224,7 +226,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 					table: "auth.invitations",
 					organizationId,
 				},
-				headers,
+				headers: electricHeaders,
 				columnMapper,
 			},
 			getKey: (item) => item.id,
@@ -240,25 +242,17 @@ function createOrgCollections(organizationId: string): OrgCollections {
 					table: "agent_commands",
 					organizationId,
 				},
-				headers,
+				headers: electricHeaders,
 				columnMapper,
 			},
 			getKey: (item) => item.id,
 			onUpdate: async ({ transaction }) => {
 				const { original, changes } = transaction.mutations[0];
-				if (!changes.status) {
-					return { txid: Date.now() };
-				}
 				const result = await apiClient.agent.updateCommand.mutate({
+					...changes,
 					id: original.id,
-					status: changes.status,
-					claimedBy: changes.claimedBy ?? undefined,
-					claimedAt: changes.claimedAt ?? undefined,
-					result: changes.result ?? undefined,
-					error: changes.error ?? undefined,
-					executedAt: changes.executedAt ?? undefined,
 				});
-				return { txid: Number(result.txid) };
+				return { txid: result.txid };
 			},
 		}),
 	);
@@ -272,7 +266,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 					table: "device_presence",
 					organizationId,
 				},
-				headers,
+				headers: electricHeaders,
 				columnMapper,
 			},
 			getKey: (item) => item.id,
@@ -280,7 +274,7 @@ function createOrgCollections(organizationId: string): OrgCollections {
 	);
 
 	const integrationConnections = createCollection(
-		electricCollectionOptions<SelectIntegrationConnection>({
+		electricCollectionOptions<IntegrationConnectionDisplay>({
 			id: `integration_connections-${organizationId}`,
 			shapeOptions: {
 				url: electricUrl,
@@ -288,7 +282,103 @@ function createOrgCollections(organizationId: string): OrgCollections {
 					table: "integration_connections",
 					organizationId,
 				},
-				headers,
+				headers: electricHeaders,
+				columnMapper,
+			},
+			getKey: (item) => item.id,
+		}),
+	);
+
+	const subscriptions = createCollection(
+		electricCollectionOptions<SelectSubscription>({
+			id: `subscriptions-${organizationId}`,
+			shapeOptions: {
+				url: electricUrl,
+				params: {
+					table: "subscriptions",
+					organizationId,
+				},
+				headers: electricHeaders,
+				columnMapper,
+			},
+			getKey: (item) => item.id,
+		}),
+	);
+
+	const apiKeys = createCollection(
+		electricCollectionOptions<ApiKeyDisplay>({
+			id: `apikeys-${organizationId}`,
+			shapeOptions: {
+				url: electricUrl,
+				params: {
+					table: "auth.apikeys",
+					organizationId,
+				},
+				headers: electricHeaders,
+				columnMapper,
+			},
+			getKey: (item) => item.id,
+		}),
+	);
+
+	const chatSessions = createCollection(
+		electricCollectionOptions<SelectChatSession>({
+			id: `chat_sessions-${organizationId}`,
+			shapeOptions: {
+				url: electricUrl,
+				params: {
+					table: "chat_sessions",
+					organizationId,
+				},
+				headers: electricHeaders,
+				columnMapper,
+			},
+			getKey: (item) => item.id,
+		}),
+	);
+
+	const sessionHosts = createCollection(
+		electricCollectionOptions<SelectSessionHost>({
+			id: `session_hosts-${organizationId}`,
+			shapeOptions: {
+				url: electricUrl,
+				params: {
+					table: "session_hosts",
+					organizationId,
+				},
+				headers: electricHeaders,
+				columnMapper,
+			},
+			getKey: (item) => item.id,
+		}),
+	);
+
+	const githubRepositories = createCollection(
+		electricCollectionOptions<SelectGithubRepository>({
+			id: `github_repositories-${organizationId}`,
+			shapeOptions: {
+				url: electricUrl,
+				params: {
+					table: "github_repositories",
+					organizationId,
+				},
+				headers: electricHeaders,
+				columnMapper,
+			},
+			getKey: (item) => item.id,
+		}),
+	);
+
+	const githubPullRequests = createCollection(
+		electricCollectionOptions<SelectGithubPullRequest>({
+			id: `github_pull_requests-${organizationId}`,
+			shapeOptions: {
+				url: electricUrl,
+				params: {
+					table: "github_pull_requests",
+					organizationId,
+				},
+				headers: electricHeaders,
 				columnMapper,
 			},
 			getKey: (item) => item.id,
@@ -298,14 +388,47 @@ function createOrgCollections(organizationId: string): OrgCollections {
 	return {
 		tasks,
 		taskStatuses,
-		repositories,
+		projects,
+		workspaces,
 		members,
 		users,
 		invitations,
 		agentCommands,
 		devicePresence,
 		integrationConnections,
+		subscriptions,
+		apiKeys,
+		chatSessions,
+		sessionHosts,
+		githubRepositories,
+		githubPullRequests,
 	};
+}
+
+/**
+ * Preload collections for an organization by starting Electric sync.
+ * Collections are lazy — they don't fetch data until subscribed or preloaded.
+ * Call this eagerly so data is ready when the user switches orgs.
+ */
+export async function preloadCollections(
+	organizationId: string,
+	options?: {
+		includeChatCollections?: boolean;
+	},
+): Promise<void> {
+	const { chatSessions, sessionHosts, ...collections } =
+		getCollections(organizationId);
+	const includeChatCollections = options?.includeChatCollections ?? true;
+	const orgCollections = Object.entries(collections)
+		.filter(([name]) => name !== "organizations")
+		.map(([, collection]) => collection as Collection<object>);
+	const collectionsToPreload = includeChatCollections
+		? [...orgCollections, chatSessions, sessionHosts]
+		: orgCollections;
+
+	await Promise.allSettled(
+		collectionsToPreload.map((c) => (c as Collection<object>).preload()),
+	);
 }
 
 /**
@@ -327,6 +450,5 @@ export function getCollections(organizationId: string) {
 	return {
 		...orgCollections,
 		organizations: organizationsCollection,
-		apiKeys: apiKeysCollection,
 	};
 }

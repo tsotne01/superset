@@ -3,13 +3,14 @@ import { toast } from "@superset/ui/sonner";
 import { Switch } from "@superset/ui/switch";
 import { cn } from "@superset/ui/utils";
 import { useLiveQuery } from "@tanstack/react-db";
-import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { format } from "date-fns";
+import { differenceInDays, format } from "date-fns";
 import { Fragment, useState } from "react";
 import { HiArrowLeft, HiArrowUpRight, HiCheck } from "react-icons/hi2";
 import { env } from "renderer/env.renderer";
+import { track } from "renderer/lib/analytics";
 import { authClient } from "renderer/lib/auth-client";
+import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import type { PlanTier } from "../constants";
 
@@ -48,6 +49,7 @@ type ComparisonValue = string | boolean | null;
 type ComparisonRow = {
 	label: string;
 	values: ComparisonValue[];
+	comingSoon?: boolean;
 };
 
 type ComparisonSection = {
@@ -136,10 +138,12 @@ const COMPARISON_SECTIONS: ComparisonSection[] = [
 			{
 				label: "Cloud workspaces",
 				values: [null, true, true],
+				comingSoon: true,
 			},
 			{
 				label: "Mobile app",
 				values: [null, true, true],
+				comingSoon: true,
 			},
 			{
 				label: "Linear integration",
@@ -197,24 +201,30 @@ function PlansPage() {
 	const [isCanceling, setIsCanceling] = useState(false);
 	const [isRestoring, setIsRestoring] = useState(false);
 	const { data: session } = authClient.useSession();
+	const openUrl = electronTrpc.external.openUrl.useMutation();
 	const collections = useCollections();
 
 	const activeOrgId = session?.session?.activeOrganizationId;
 
-	const { data: subscriptionData, refetch: refetchSubscription } = useQuery({
-		queryKey: ["subscription", activeOrgId],
-		queryFn: async () => {
-			if (!activeOrgId) return null;
-			const result = await authClient.subscription.list({
-				query: { referenceId: activeOrgId },
-			});
-			return result.data?.find((s) => s.status === "active");
-		},
-		enabled: !!activeOrgId,
-	});
+	// Get subscription from Electric (preloaded, instant)
+	const { data: subscriptionsData } = useLiveQuery(
+		(q) => q.from({ subscriptions: collections.subscriptions }),
+		[collections],
+	);
+	const subscriptionData = subscriptionsData?.find(
+		(s) => s.status === "active",
+	);
 
 	const currentPlan: PlanTier = (subscriptionData?.plan as PlanTier) ?? "free";
 	const cancelAt = subscriptionData?.cancelAt;
+
+	const isCurrentlyYearly =
+		subscriptionData?.periodStart &&
+		subscriptionData?.periodEnd &&
+		differenceInDays(
+			new Date(subscriptionData.periodEnd),
+			new Date(subscriptionData.periodStart),
+		) > 60;
 
 	const { data: membersData } = useLiveQuery(
 		(q) =>
@@ -245,7 +255,8 @@ function PlansPage() {
 		}
 
 		if (action === "contact") {
-			window.open("mailto:founders@superset.sh", "_blank");
+			track("enterprise_trial_requested", { source: "billing_plans" });
+			openUrl.mutate("mailto:founders@superset.sh");
 			return;
 		}
 
@@ -267,7 +278,6 @@ function PlansPage() {
 						},
 					},
 				);
-				await refetchSubscription();
 			} finally {
 				setIsCanceling(false);
 			}
@@ -280,7 +290,6 @@ function PlansPage() {
 				await authClient.subscription.restore({
 					referenceId: activeOrgId,
 				});
-				await refetchSubscription();
 				toast.success("Plan restored");
 			} finally {
 				setIsRestoring(false);
@@ -298,6 +307,7 @@ function PlansPage() {
 					seats: memberCount,
 					successUrl: `${env.NEXT_PUBLIC_WEB_URL}/settings/billing?success=true`,
 					cancelUrl: env.NEXT_PUBLIC_WEB_URL,
+					returnUrl: env.NEXT_PUBLIC_WEB_URL,
 					disableRedirect: true,
 				},
 				{
@@ -332,7 +342,7 @@ function PlansPage() {
 
 	const highlightColumnIndex = 1;
 	const highlightColumnStart = highlightColumnIndex + 2;
-	const gridColumnsClass = "grid grid-cols-[180px_repeat(3,_1fr)]";
+	const gridColumnsClass = "grid grid-cols-[240px_repeat(3,_1fr)]";
 
 	return (
 		<div className="p-6 max-w-7xl w-full">
@@ -352,13 +362,19 @@ function PlansPage() {
 						</span>
 						. If you have any questions or would like further support with your
 						plan,{" "}
-						<a
-							href="mailto:founders@superset.sh"
+						<button
+							type="button"
+							onClick={() => {
+								track("billing_support_contacted", {
+									source: "billing_plans_inline",
+								});
+								openUrl.mutate("mailto:founders@superset.sh");
+							}}
 							className="inline-flex items-center gap-1 text-primary hover:underline"
 						>
 							contact us
 							<HiArrowUpRight className="h-3 w-3" />
-						</a>
+						</button>
 						.
 					</p>
 				</div>
@@ -390,9 +406,20 @@ function PlansPage() {
 									const isCurrent = currentPlanLabel === plan.name;
 									const isDowngrade =
 										plan.id === "free" && currentPlan !== "free";
+									const isOnEnterprise = currentPlan === "enterprise";
 
 									let planActions: typeof plan.actions;
-									if (isCurrent && cancelAt) {
+									if (isOnEnterprise) {
+										planActions = [
+											{
+												label: isCurrent
+													? "Current plan"
+													: "Included in Enterprise",
+												action: "current" as const,
+												variant: "secondary" as const,
+											},
+										];
+									} else if (isCurrent && cancelAt) {
 										planActions = [
 											{
 												label: isRestoring ? "Restoring..." : "Restore plan",
@@ -400,6 +427,29 @@ function PlansPage() {
 												variant: "default" as const,
 											},
 										];
+									} else if (isCurrent && plan.id === "pro") {
+										const intervalMatches = isYearly === !!isCurrentlyYearly;
+										if (intervalMatches) {
+											planActions = [
+												{
+													label: "Current plan",
+													action: "current" as const,
+													variant: "secondary" as const,
+												},
+											];
+										} else {
+											planActions = [
+												{
+													label: isUpgrading
+														? "Changing..."
+														: isYearly
+															? "Change to Annual"
+															: "Change to Monthly",
+													action: "upgrade" as const,
+													variant: "default" as const,
+												},
+											];
+										}
 									} else if (isCurrent) {
 										planActions = [
 											{
@@ -524,8 +574,13 @@ function PlansPage() {
 
 									return (
 										<Fragment key={row.label}>
-											<div className="flex items-center px-2 py-2.5 text-xs text-muted-foreground">
+											<div className="flex items-center gap-1.5 px-2 py-2.5 text-xs text-muted-foreground">
 												{row.label}
+												{row.comingSoon && (
+													<span className="text-[10px] text-muted-foreground/60">
+														(Coming Soon)
+													</span>
+												)}
 											</div>
 											{row.values.map((value, valueIndex) => (
 												<div

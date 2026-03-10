@@ -1,19 +1,30 @@
+import type { GitHubStatus } from "@superset/local-db";
 import { Button } from "@superset/ui/button";
+import {
+	Command,
+	CommandEmpty,
+	CommandInput,
+	CommandItem,
+	CommandList,
+} from "@superset/ui/command";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
-	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@superset/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@superset/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
-import { useEffect, useRef, useState } from "react";
-import { HiArrowPath, HiCheck } from "react-icons/hi2";
-import { LuGitBranch } from "react-icons/lu";
-import { VscGitStash, VscGitStashApply } from "react-icons/vsc";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+	VscCheck,
+	VscGitStash,
+	VscGitStashApply,
+	VscRefresh,
+	VscSourceControl,
+} from "react-icons/vsc";
 import { electronTrpc } from "renderer/lib/electron-trpc";
-import { useChangesStore } from "renderer/stores/changes";
 import type { ChangesViewMode } from "../../types";
 import { ViewModeToggle } from "../ViewModeToggle";
 import { PRButton } from "./components/PRButton";
@@ -23,7 +34,10 @@ interface ChangesHeaderProps {
 	viewMode: ChangesViewMode;
 	onViewModeChange: (mode: ChangesViewMode) => void;
 	worktreePath: string;
-	workspaceId?: string;
+	pr: GitHubStatus["pr"] | null;
+	isPRStatusLoading: boolean;
+	canCreatePR: boolean;
+	createPRBlockedReason: string | null;
 	onStash: () => void;
 	onStashIncludeUntracked: () => void;
 	onStashPop: () => void;
@@ -31,74 +45,102 @@ interface ChangesHeaderProps {
 }
 
 function BaseBranchSelector({ worktreePath }: { worktreePath: string }) {
-	const { getBaseBranch, setBaseBranch } = useChangesStore();
-	const baseBranch = getBaseBranch(worktreePath);
+	const [open, setOpen] = useState(false);
+	const [search, setSearch] = useState("");
+	const utils = electronTrpc.useUtils();
 	const { data: branchData, isLoading } =
 		electronTrpc.changes.getBranches.useQuery(
 			{ worktreePath },
 			{ enabled: !!worktreePath },
 		);
 
-	const effectiveBaseBranch = baseBranch ?? branchData?.defaultBranch ?? "main";
-	const sortedBranches = [...(branchData?.remote ?? [])].sort((a, b) => {
-		if (a === branchData?.defaultBranch) return -1;
-		if (b === branchData?.defaultBranch) return 1;
-		return a.localeCompare(b);
+	const updateBaseBranch = electronTrpc.changes.updateBaseBranch.useMutation({
+		onSuccess: () => {
+			utils.changes.getBranches.invalidate({ worktreePath });
+		},
 	});
 
+	const effectiveBaseBranch =
+		branchData?.worktreeBaseBranch ?? branchData?.defaultBranch ?? "main";
+	const sortedBranches = useMemo(() => {
+		return [...(branchData?.remote ?? [])].sort((a, b) => {
+			if (a === effectiveBaseBranch) return -1;
+			if (b === effectiveBaseBranch) return 1;
+			if (a === branchData?.defaultBranch) return -1;
+			if (b === branchData?.defaultBranch) return 1;
+			return a.localeCompare(b);
+		});
+	}, [branchData?.remote, branchData?.defaultBranch, effectiveBaseBranch]);
+
+	const filteredBranches = useMemo(() => {
+		if (!search) return sortedBranches.filter(Boolean);
+		const lower = search.toLowerCase();
+		return sortedBranches.filter((branch) =>
+			branch?.toLowerCase().includes(lower),
+		);
+	}, [sortedBranches, search]);
+
 	const handleBranchSelect = (branch: string) => {
-		if (branch === branchData?.defaultBranch) {
-			setBaseBranch(worktreePath, null);
-		} else {
-			setBaseBranch(worktreePath, branch);
-		}
+		updateBaseBranch.mutate({
+			worktreePath,
+			baseBranch: branch === branchData?.defaultBranch ? null : branch,
+		});
+		setOpen(false);
+		setSearch("");
 	};
 
 	return (
-		<DropdownMenu>
+		<Popover open={open} onOpenChange={setOpen}>
 			<Tooltip>
 				<TooltipTrigger asChild>
-					<DropdownMenuTrigger asChild>
+					<PopoverTrigger asChild>
 						<Button
 							variant="ghost"
 							size="icon"
 							className="size-6 p-0"
 							disabled={isLoading}
 						>
-							<LuGitBranch className="size-3.5" />
+							<VscSourceControl className="size-3.5" />
 						</Button>
-					</DropdownMenuTrigger>
+					</PopoverTrigger>
 				</TooltipTrigger>
-				<TooltipContent side="bottom" showArrow={false}>
+				<TooltipContent side="top" showArrow={false}>
 					Change base branch
 				</TooltipContent>
 			</Tooltip>
-			<DropdownMenuContent align="start" className="w-56">
-				<DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
-					Current base branch
-				</DropdownMenuLabel>
-				<DropdownMenuSeparator />
-				{sortedBranches
-					.filter((branch) => branch)
-					.map((branch) => (
-						<DropdownMenuItem
-							key={branch}
-							onClick={() => handleBranchSelect(branch)}
-							className="flex items-center justify-between text-xs"
-						>
-							<span className="truncate">
-								{branch}
-								{branch === branchData?.defaultBranch && (
-									<span className="ml-1 text-muted-foreground">(default)</span>
+			<PopoverContent align="start" className="w-56 p-0">
+				<Command shouldFilter={false}>
+					<CommandInput
+						placeholder="Search branches..."
+						value={search}
+						onValueChange={setSearch}
+					/>
+					<CommandList className="max-h-[200px]">
+						<CommandEmpty>No branches found</CommandEmpty>
+						{filteredBranches.map((branch) => (
+							<CommandItem
+								key={branch}
+								value={branch}
+								onSelect={() => handleBranchSelect(branch)}
+								className="flex items-center justify-between text-xs"
+							>
+								<span className="truncate">
+									{branch}
+									{branch === branchData?.defaultBranch && (
+										<span className="ml-1 text-muted-foreground">
+											(default)
+										</span>
+									)}
+								</span>
+								{branch === effectiveBaseBranch && (
+									<VscCheck className="size-3.5 shrink-0 text-primary" />
 								)}
-							</span>
-							{branch === effectiveBaseBranch && (
-								<HiCheck className="size-3.5 shrink-0 text-primary" />
-							)}
-						</DropdownMenuItem>
-					))}
-			</DropdownMenuContent>
-		</DropdownMenu>
+							</CommandItem>
+						))}
+					</CommandList>
+				</Command>
+			</PopoverContent>
+		</Popover>
 	);
 }
 
@@ -128,7 +170,7 @@ function StashDropdown({
 						</Button>
 					</DropdownMenuTrigger>
 				</TooltipTrigger>
-				<TooltipContent side="bottom" showArrow={false}>
+				<TooltipContent side="top" showArrow={false}>
 					Stash operations
 				</TooltipContent>
 			</Tooltip>
@@ -178,15 +220,49 @@ function RefreshButton({ onRefresh }: { onRefresh: () => void }) {
 					disabled={isSpinning}
 					className="size-6 p-0"
 				>
-					<HiArrowPath
+					<VscRefresh
 						className={`size-3.5 ${isSpinning ? "animate-spin" : ""}`}
 					/>
 				</Button>
 			</TooltipTrigger>
-			<TooltipContent side="bottom" showArrow={false}>
+			<TooltipContent side="top" showArrow={false}>
 				Refresh changes
 			</TooltipContent>
 		</Tooltip>
+	);
+}
+
+const reviewTagStyles = {
+	approved: "bg-emerald-500/15 text-emerald-500",
+	changes_requested: "bg-destructive/15 text-destructive-foreground",
+	pending: "bg-amber-500/15 text-amber-500",
+} as const;
+
+const reviewTagLabels = {
+	approved: "Approved",
+	changes_requested: "Changes req.",
+	pending: "Review pending",
+} as const;
+
+function ReviewTag({
+	status,
+	requestedReviewers,
+}: {
+	status: "approved" | "changes_requested" | "pending";
+	requestedReviewers?: string[];
+}) {
+	const label =
+		status === "pending" && requestedReviewers && requestedReviewers.length > 0
+			? `Awaiting ${requestedReviewers.join(", ")}`
+			: reviewTagLabels[status];
+
+	return (
+		<span
+			className={`ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded-md shrink-0 truncate max-w-[140px] ${reviewTagStyles[status]}`}
+			title={label}
+		>
+			{label}
+		</span>
 	);
 }
 
@@ -195,7 +271,10 @@ export function ChangesHeader({
 	viewMode,
 	onViewModeChange,
 	worktreePath,
-	workspaceId,
+	pr,
+	isPRStatusLoading,
+	canCreatePR,
+	createPRBlockedReason,
 	onStash,
 	onStashIncludeUntracked,
 	onStashPop,
@@ -212,8 +291,17 @@ export function ChangesHeader({
 			/>
 			<ViewModeToggle viewMode={viewMode} onViewModeChange={onViewModeChange} />
 			<RefreshButton onRefresh={onRefresh} />
+			{pr && pr.state === "open" && (
+				<ReviewTag
+					status={pr.reviewDecision}
+					requestedReviewers={pr.requestedReviewers}
+				/>
+			)}
 			<PRButton
-				workspaceId={workspaceId}
+				pr={pr}
+				isLoading={isPRStatusLoading}
+				canCreatePR={canCreatePR}
+				createPRBlockedReason={createPRBlockedReason}
 				worktreePath={worktreePath}
 				onRefresh={onRefresh}
 			/>

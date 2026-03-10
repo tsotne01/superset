@@ -2,11 +2,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { register as createWorkspace } from "./devices/create-workspace";
 import { register as deleteWorkspace } from "./devices/delete-workspace";
 import { register as getAppContext } from "./devices/get-app-context";
+import { register as getWorkspaceDetails } from "./devices/get-workspace-details";
 import { register as listDevices } from "./devices/list-devices";
 import { register as listProjects } from "./devices/list-projects";
 import { register as listWorkspaces } from "./devices/list-workspaces";
-import { register as navigateToWorkspace } from "./devices/navigate-to-workspace";
-import { register as startClaudeSession } from "./devices/start-claude-session";
+import { register as startAgentSession } from "./devices/start-agent-session";
 import { register as switchWorkspace } from "./devices/switch-workspace";
 import { register as updateWorkspace } from "./devices/update-workspace";
 import { register as listMembers } from "./organizations/list-members";
@@ -29,12 +29,12 @@ const allTools = [
 	listWorkspaces,
 	listProjects,
 	getAppContext,
-	navigateToWorkspace,
+	getWorkspaceDetails,
 	createWorkspace,
 	switchWorkspace,
 	deleteWorkspace,
 	updateWorkspace,
-	startClaudeSession,
+	startAgentSession,
 ];
 
 export function registerTools(server: McpServer) {

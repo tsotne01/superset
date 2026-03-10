@@ -20,13 +20,18 @@ export const Route = createFileRoute("/_authenticated/settings")({
 // Order of sections for auto-navigation
 const SECTION_ORDER: SettingsSection[] = [
 	"account",
-	"organization",
 	"appearance",
 	"ringtones",
 	"keyboard",
 	"behavior",
+	"git",
 	"terminal",
+	"organization",
 	"integrations",
+	"billing",
+	"devices",
+	"apikeys",
+	"permissions",
 ];
 
 // Map route paths to section names
@@ -37,10 +42,11 @@ function getSectionFromPath(pathname: string): SettingsSection | null {
 	if (pathname.includes("/settings/ringtones")) return "ringtones";
 	if (pathname.includes("/settings/keyboard")) return "keyboard";
 	if (pathname.includes("/settings/behavior")) return "behavior";
+	if (pathname.includes("/settings/git")) return "git";
 	if (pathname.includes("/settings/terminal")) return "terminal";
 	if (pathname.includes("/settings/integrations")) return "integrations";
+	if (pathname.includes("/settings/permissions")) return "permissions";
 	if (pathname.includes("/settings/project")) return "project";
-	if (pathname.includes("/settings/workspace")) return "workspace";
 	return null;
 }
 
@@ -59,10 +65,14 @@ function getPathFromSection(section: SettingsSection): string {
 			return "/settings/keyboard";
 		case "behavior":
 			return "/settings/behavior";
+		case "git":
+			return "/settings/git";
 		case "terminal":
 			return "/settings/terminal";
 		case "integrations":
 			return "/settings/integrations";
+		case "permissions":
+			return "/settings/permissions";
 		default:
 			return "/settings/account";
 	}
@@ -82,8 +92,8 @@ function SettingsLayout() {
 		const currentSection = getSectionFromPath(location.pathname);
 		if (!currentSection) return;
 
-		// Don't auto-navigate from project/workspace pages
-		if (currentSection === "project" || currentSection === "workspace") return;
+		// Don't auto-navigate from project pages
+		if (currentSection === "project") return;
 
 		const matchCounts = getMatchCountBySection(searchQuery);
 		const currentHasMatches = (matchCounts[currentSection] ?? 0) > 0;

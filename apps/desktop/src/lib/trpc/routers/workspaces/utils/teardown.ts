@@ -1,7 +1,14 @@
 import { spawn } from "node:child_process";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import {
+	getCommandShellArgs,
+	getShellEnv,
+} from "main/lib/agent-setup/shell-wrappers";
+import { buildSafeEnv, sanitizeEnv } from "main/lib/terminal/env";
+import { SUPERSET_DIR_NAME } from "shared/constants";
 import { removeWorktree } from "./git";
 import { loadSetupConfig } from "./setup";
-import { getShellEnvironment } from "./shell-env";
 
 const TEARDOWN_TIMEOUT_MS = 60_000;
 
@@ -15,14 +22,14 @@ export async function runTeardown({
 	mainRepoPath,
 	worktreePath,
 	workspaceName,
-	projectName,
+	projectId,
 }: {
 	mainRepoPath: string;
 	worktreePath: string;
 	workspaceName: string;
-	projectName?: string;
+	projectId?: string;
 }): Promise<TeardownResult> {
-	const config = loadSetupConfig({ mainRepoPath, worktreePath, projectName });
+	const config = loadSetupConfig({ mainRepoPath, worktreePath, projectId });
 
 	if (!config?.teardown || config.teardown.length === 0) {
 		console.log(
@@ -35,19 +42,29 @@ export async function runTeardown({
 	console.log(`[teardown] Running for "${workspaceName}": ${command}`);
 
 	try {
-		const shellEnv = await getShellEnvironment();
-
 		const shell =
 			process.env.SHELL ||
 			(process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");
+		const supersetHomeDir =
+			process.env.SUPERSET_HOME_DIR || join(homedir(), SUPERSET_DIR_NAME);
+		const shellWrapperPaths = {
+			BIN_DIR: join(supersetHomeDir, "bin"),
+			ZSH_DIR: join(supersetHomeDir, "zsh"),
+			BASH_DIR: join(supersetHomeDir, "bash"),
+		};
+
+		const baseEnv = buildSafeEnv(sanitizeEnv(process.env) || {});
+		const wrapperEnv = getShellEnv(shell, shellWrapperPaths);
+		const args = getCommandShellArgs(shell, command, shellWrapperPaths);
 
 		const output = await new Promise<string>((resolve, reject) => {
-			const child = spawn(shell, ["-lc", command], {
+			const child = spawn(shell, args, {
 				cwd: worktreePath,
 				detached: true,
 				stdio: ["ignore", "pipe", "pipe"],
 				env: {
-					...shellEnv,
+					...baseEnv,
+					...wrapperEnv,
 					SUPERSET_WORKSPACE_NAME: workspaceName,
 					SUPERSET_ROOT_PATH: mainRepoPath,
 				},
@@ -77,8 +94,7 @@ export async function runTeardown({
 				fn();
 			};
 
-			// Resolve on process exit, NOT stream close — prevents hanging
-			// when teardown spawns background processes that inherit stdio
+			// "exit" not "close" — background children may hold stdio open
 			child.on("exit", (code) => {
 				settle(() => {
 					if (code === 0) resolve(combined);

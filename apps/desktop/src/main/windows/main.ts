@@ -6,11 +6,16 @@ import { app, Notification, nativeTheme } from "electron";
 import { createWindow } from "lib/electron-app/factories/windows/create";
 import { createAppRouter } from "lib/trpc/routers";
 import { localDb } from "main/lib/local-db";
-import { NOTIFICATION_EVENTS, PLATFORM, PORTS } from "shared/constants";
+import { NOTIFICATION_EVENTS, PLATFORM } from "shared/constants";
+import {
+	env,
+	getWorkspaceName as getEnvWorkspaceName,
+} from "shared/env.shared";
 import type { AgentLifecycleEvent } from "shared/notification-types";
 import { createIPCHandler } from "trpc-electron/main";
 import { productName } from "~/package.json";
 import { appState } from "../lib/app-state";
+import { browserManager } from "../lib/browser/browser-manager";
 import { createApplicationMenu, registerMenuHotkeyUpdates } from "../lib/menu";
 import { playNotificationSound } from "../lib/notification-sound";
 import { NotificationManager } from "../lib/notifications/notification-manager";
@@ -86,9 +91,15 @@ export async function MainWindow() {
 	const savedWindowState = loadWindowState();
 	const initialBounds = getInitialWindowBounds(savedWindowState);
 
+	const isDev = env.NODE_ENV === "development";
+	const workspaceName = isDev ? getEnvWorkspaceName() : undefined;
+	const windowTitle = workspaceName
+		? `${productName} — ${workspaceName}`
+		: productName;
+
 	const window = createWindow({
 		id: "main",
-		title: productName,
+		title: windowTitle,
 		width: initialBounds.width,
 		height: initialBounds.height,
 		x: initialBounds.x,
@@ -134,11 +145,11 @@ export async function MainWindow() {
 	}
 
 	const server = notificationsApp.listen(
-		PORTS.NOTIFICATIONS,
+		env.DESKTOP_NOTIFICATIONS_PORT,
 		"127.0.0.1",
 		() => {
 			console.log(
-				`[notifications] Listening on http://127.0.0.1:${PORTS.NOTIFICATIONS}`,
+				`[notifications] Listening on http://127.0.0.1:${env.DESKTOP_NOTIFICATIONS_PORT}`,
 			);
 		},
 	);
@@ -209,7 +220,35 @@ export async function MainWindow() {
 		});
 	}
 
-	window.webContents.on("did-finish-load", async () => {
+	// Persist window bounds on move/resize so state survives app.exit(0)
+	// (which skips the close handler — e.g. electron-vite SIGTERM during dev).
+	// Gated by `initialized` so the initial maximize() doesn't immediately
+	// write isMaximized: true back to disk before the user touches the window.
+	let initialized = false;
+	let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+	const debouncedSave = () => {
+		if (!initialized || window.isDestroyed()) return;
+		if (saveTimeout) clearTimeout(saveTimeout);
+		saveTimeout = setTimeout(() => {
+			if (window.isDestroyed()) return;
+			const isMaximized = window.isMaximized();
+			const bounds = isMaximized
+				? window.getNormalBounds()
+				: window.getBounds();
+			saveWindowState({
+				x: bounds.x,
+				y: bounds.y,
+				width: bounds.width,
+				height: bounds.height,
+				isMaximized,
+				zoomLevel: window.webContents.getZoomLevel(),
+			});
+		}, 500);
+	};
+	window.on("move", debouncedSave);
+	window.on("resize", debouncedSave);
+
+	window.webContents.once("did-finish-load", async () => {
 		console.log("[main-window] Renderer loaded successfully");
 		if (initialBounds.isMaximized) {
 			window.maximize();
@@ -218,6 +257,7 @@ export async function MainWindow() {
 			window.webContents.setZoomLevel(savedWindowState.zoomLevel);
 		}
 		window.show();
+		initialized = true;
 	});
 
 	window.webContents.on(
@@ -256,6 +296,7 @@ export async function MainWindow() {
 			zoomLevel,
 		});
 
+		browserManager.unregisterAll();
 		server.close();
 		notificationManager.dispose();
 		notificationsEmitter.removeAllListeners();

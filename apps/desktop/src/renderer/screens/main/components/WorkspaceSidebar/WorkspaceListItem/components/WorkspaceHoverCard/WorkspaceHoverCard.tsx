@@ -4,6 +4,7 @@ import { formatDistanceToNow } from "date-fns";
 import { FaGithub } from "react-icons/fa";
 import {
 	LuExternalLink,
+	LuGlobe,
 	LuLoaderCircle,
 	LuTriangleAlert,
 } from "react-icons/lu";
@@ -35,6 +36,7 @@ export function WorkspaceHoverCardContent({
 		pr,
 		repoUrl,
 		branchExistsOnRemote,
+		previewUrl,
 		isLoading: isLoadingGithub,
 	} = usePRStatus({ workspaceId });
 
@@ -43,7 +45,22 @@ export function WorkspaceHoverCardContent({
 		openPRDisplay.length === 1 && openPRDisplay[0] === "Unassigned"
 	);
 
+	const previewButton = previewUrl ? (
+		<Button
+			variant="outline"
+			size="sm"
+			className="w-full h-7 text-xs gap-1.5"
+			asChild
+		>
+			<a href={previewUrl} target="_blank" rel="noopener noreferrer">
+				<LuGlobe className="size-3" strokeWidth={STROKE_WIDTH} />
+				Open Preview
+			</a>
+		</Button>
+	) : null;
+
 	const needsRebase = worktreeInfo?.gitStatus?.needsRebase;
+	const behindCount = worktreeInfo?.gitStatus?.behind;
 
 	const worktreeName = worktreeInfo?.worktreeName;
 	const branchName = worktreeInfo?.branchName;
@@ -52,7 +69,6 @@ export function WorkspaceHoverCardContent({
 
 	return (
 		<div className="space-y-3">
-			{/* Header: Alias + Worktree name + age */}
 			<div className="space-y-1.5">
 				{hasCustomAlias && (
 					<div className="text-sm font-medium">{workspaceAlias}</div>
@@ -91,18 +107,19 @@ export function WorkspaceHoverCardContent({
 				)}
 			</div>
 
-			{/* Needs Rebase Warning */}
 			{needsRebase && (
 				<div className="flex items-center gap-2 text-amber-500 text-xs bg-amber-500/10 px-2 py-1.5 rounded-md">
 					<LuTriangleAlert
 						className="size-3.5 shrink-0"
 						strokeWidth={STROKE_WIDTH}
 					/>
-					<span>Behind main, needs rebase</span>
+					<span>
+						Behind main by {behindCount ?? "?"} commit
+						{behindCount !== 1 && "s"}, needs rebase
+					</span>
 				</div>
 			)}
 
-			{/* PR Section */}
 			{isLoadingGithub ? (
 				<div className="flex items-center gap-2 text-muted-foreground pt-2 border-t border-border">
 					<LuLoaderCircle
@@ -113,15 +130,20 @@ export function WorkspaceHoverCardContent({
 				</div>
 			) : pr ? (
 				<div className="pt-2 border-t border-border space-y-2">
-					{/* PR Header: Number + Status + Diff Stats */}
 					<div className="flex items-center justify-between">
-						<div className="flex items-center gap-2">
+						<div className="flex items-center gap-1.5 flex-wrap">
 							<span className="text-xs font-medium text-muted-foreground">
 								#{pr.number}
 							</span>
 							<PRStatusBadge state={pr.state} />
+							{pr.state === "open" && (
+								<ReviewStatus
+									status={pr.reviewDecision}
+									requestedReviewers={pr.requestedReviewers}
+								/>
+							)}
 						</div>
-						<div className="flex items-center gap-1.5 text-xs font-mono">
+						<div className="flex items-center gap-1.5 text-xs font-mono shrink-0">
 							<span className="text-emerald-500">+{pr.additions}</span>
 							<span className="text-destructive-foreground">
 								-{pr.deletions}
@@ -129,22 +151,17 @@ export function WorkspaceHoverCardContent({
 						</div>
 					</div>
 
-					{/* PR Title */}
 					<p className="text-xs leading-relaxed line-clamp-2">{pr.title}</p>
 
-					{/* Checks & Review - only for open PRs */}
 					{pr.state === "open" && (
 						<div className="space-y-2 pt-1">
 							<div className="flex items-center gap-2 text-xs">
 								<ChecksSummary checks={pr.checks} status={pr.checksStatus} />
-								<span className="text-muted-foreground">·</span>
-								<ReviewStatus status={pr.reviewDecision} />
 							</div>
 							{pr.checks.length > 0 && <ChecksList checks={pr.checks} />}
 						</div>
 					)}
 
-					{/* View on GitHub button */}
 					<Button
 						variant="outline"
 						size="sm"
@@ -165,10 +182,14 @@ export function WorkspaceHoverCardContent({
 							)}
 						</a>
 					</Button>
+					{previewButton}
 				</div>
 			) : repoUrl ? (
-				<div className="text-xs text-muted-foreground pt-2 border-t border-border">
-					No PR for this branch
+				<div className="pt-2 border-t border-border space-y-2">
+					<div className="text-xs text-muted-foreground">
+						No PR for this branch
+					</div>
+					{previewButton}
 				</div>
 			) : null}
 		</div>

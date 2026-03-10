@@ -31,7 +31,7 @@ export function AssigneeCell({ info }: AssigneeCellProps) {
 	const users = useMemo(() => allUsers || [], [allUsers]);
 
 	const handleSelectUser = (userId: string | null) => {
-		if (userId === assigneeId) {
+		if (userId === assigneeId && !task.assigneeExternalId) {
 			setOpen(false);
 			return;
 		}
@@ -40,25 +40,42 @@ export function AssigneeCell({ info }: AssigneeCellProps) {
 
 		collections.tasks.update(task.id, (draft) => {
 			draft.assigneeId = userId;
+			draft.assigneeExternalId = null;
+			draft.assigneeDisplayName = null;
+			draft.assigneeAvatarUrl = null;
 		});
 	};
 
 	return (
 		<DropdownMenu open={open} onOpenChange={setOpen}>
 			<DropdownMenuTrigger asChild>
-				<button type="button" className="cursor-pointer">
+				<button
+					type="button"
+					className="cursor-pointer"
+					onClick={(e) => e.stopPropagation()}
+				>
 					{task.assignee ? (
 						<Avatar
 							size="xs"
 							fullName={task.assignee.name}
 							image={task.assignee.image}
 						/>
+					) : task.assigneeExternalId ? (
+						<Avatar
+							size="xs"
+							fullName={task.assigneeDisplayName || "External"}
+							image={task.assigneeAvatarUrl}
+						/>
 					) : (
 						<HiOutlineUserCircle className="size-5 text-muted-foreground" />
 					)}
 				</button>
 			</DropdownMenuTrigger>
-			<DropdownMenuContent align="start" className="w-56">
+			<DropdownMenuContent
+				align="start"
+				className="w-56"
+				onClick={(e) => e.stopPropagation()}
+			>
 				<div className="max-h-64 overflow-y-auto">
 					<DropdownMenuItem
 						onSelect={() => handleSelectUser(null)}
@@ -66,7 +83,7 @@ export function AssigneeCell({ info }: AssigneeCellProps) {
 					>
 						<HiOutlineUserCircle className="size-5 text-muted-foreground shrink-0" />
 						<span className="text-sm">No assignee</span>
-						{!assigneeId && (
+						{!assigneeId && !task.assigneeExternalId && (
 							<span className="ml-auto text-xs text-muted-foreground">✓</span>
 						)}
 					</DropdownMenuItem>

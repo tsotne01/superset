@@ -3,6 +3,10 @@ import { eq } from "drizzle-orm";
 import { track } from "main/lib/analytics";
 import { localDb } from "main/lib/local-db";
 import { workspaceInitManager } from "main/lib/workspace-init-manager";
+import type { WorkspaceInitStep } from "shared/types/workspace-init";
+import { attemptWorkspaceAutoRenameFromPrompt } from "./ai-name";
+import { resolveWorkspaceBaseBranch } from "./base-branch";
+import { getBranchBaseConfig, setBranchBaseConfig } from "./base-branch-config";
 import {
 	branchExistsOnRemote,
 	createWorktree,
@@ -22,10 +26,8 @@ export interface WorkspaceInitParams {
 	worktreeId: string;
 	worktreePath: string;
 	branch: string;
-	baseBranch: string;
-	/** If true, user explicitly specified baseBranch - don't auto-update it */
-	baseBranchWasExplicit: boolean;
 	mainRepoPath: string;
+	namingPrompt?: string;
 	/** If true, use an existing branch instead of creating a new one */
 	useExistingBranch?: boolean;
 	/** If true, skip worktree creation (worktree already exists on disk) */
@@ -44,26 +46,65 @@ export async function initializeWorkspaceWorktree({
 	worktreeId,
 	worktreePath,
 	branch,
-	baseBranch,
-	baseBranchWasExplicit,
 	mainRepoPath,
+	namingPrompt,
 	useExistingBranch,
 	skipWorktreeCreation,
 }: WorkspaceInitParams): Promise<void> {
 	const manager = workspaceInitManager;
+	const completeReadyState = async (): Promise<void> => {
+		let warning: string | undefined;
+		try {
+			const autoRenameResult = await attemptWorkspaceAutoRenameFromPrompt({
+				workspaceId,
+				prompt: namingPrompt,
+			});
+			warning =
+				autoRenameResult.status === "skipped"
+					? autoRenameResult.warning
+					: undefined;
+		} catch (error) {
+			console.warn("[workspace-init] Auto naming failed", {
+				workspaceId,
+				error: error instanceof Error ? error.message : String(error),
+			});
+			warning = "Couldn't auto-name this workspace.";
+		}
 
-	try {
-		// Acquire per-project lock to prevent concurrent git operations
-		await manager.acquireProjectLock(projectId);
-
-		// Check cancellation before starting (use durable cancellation check)
-		// Note: We don't emit "failed" progress for cancellations because the workspace
-		// is being deleted. Emitting would trigger a refetch race condition where the
-		// workspace temporarily reappears. finalizeJob() in the finally block will
-		// still unblock waitForInit() callers.
 		if (manager.isCancellationRequested(workspaceId)) {
 			return;
 		}
+
+		manager.updateProgress(workspaceId, "ready", "Ready", undefined, warning);
+	};
+
+	try {
+		await manager.acquireProjectLock(projectId);
+
+		// Don't emit "failed" for cancellations — the workspace is being deleted,
+		// and emitting would trigger a refetch race condition where it temporarily
+		// reappears. finalizeJob() in the finally block still unblocks waitForInit().
+		if (manager.isCancellationRequested(workspaceId)) {
+			return;
+		}
+
+		const project = localDb
+			.select()
+			.from(projects)
+			.where(eq(projects.id, projectId))
+			.get();
+
+		const { baseBranch: gitConfigBase, isExplicit: baseBranchWasExplicit } =
+			await getBranchBaseConfig({
+				repoPath: mainRepoPath,
+				branch,
+			});
+		let effectiveBaseBranch =
+			gitConfigBase ||
+			resolveWorkspaceBaseBranch({
+				workspaceBaseBranch: project?.workspaceBaseBranch,
+				defaultBranch: project?.defaultBranch,
+			});
 
 		if (useExistingBranch) {
 			if (skipWorktreeCreation) {
@@ -120,19 +161,21 @@ export async function initializeWorkspaceWorktree({
 					gitStatus: {
 						branch,
 						needsRebase: false,
+						ahead: 0,
+						behind: 0,
 						lastRefreshed: Date.now(),
 					},
 				})
 				.where(eq(worktrees.id, worktreeId))
 				.run();
 
-			manager.updateProgress(workspaceId, "ready", "Ready");
+			await completeReadyState();
 
 			track("workspace_initialized", {
 				workspace_id: workspaceId,
 				project_id: projectId,
 				branch,
-				base_branch: branch, // For existing branch, base = branch
+				base_branch: branch,
 				use_existing_branch: true,
 			});
 
@@ -142,33 +185,12 @@ export async function initializeWorkspaceWorktree({
 		manager.updateProgress(workspaceId, "syncing", "Syncing with remote...");
 		const remoteDefaultBranch = await refreshDefaultBranch(mainRepoPath);
 
-		let effectiveBaseBranch = baseBranch;
-
 		if (remoteDefaultBranch) {
-			const project = localDb
-				.select()
-				.from(projects)
-				.where(eq(projects.id, projectId))
-				.get();
 			if (project && remoteDefaultBranch !== project.defaultBranch) {
 				localDb
 					.update(projects)
 					.set({ defaultBranch: remoteDefaultBranch })
 					.where(eq(projects.id, projectId))
-					.run();
-			}
-
-			// If baseBranch was auto-derived and differs from remote,
-			// update the worktree record so retries use the correct branch
-			if (!baseBranchWasExplicit && remoteDefaultBranch !== baseBranch) {
-				console.log(
-					`[workspace-init] Auto-updating baseBranch from "${baseBranch}" to "${remoteDefaultBranch}" for workspace ${workspaceId}`,
-				);
-				effectiveBaseBranch = remoteDefaultBranch;
-				localDb
-					.update(worktrees)
-					.set({ baseBranch: remoteDefaultBranch })
-					.where(eq(worktrees.id, worktreeId))
 					.run();
 			}
 		}
@@ -193,7 +215,6 @@ export async function initializeWorkspaceWorktree({
 			reason: string,
 			checkOriginRefs: boolean,
 		): Promise<LocalStartPointResult> => {
-			// Try origin tracking ref first (only if remote exists)
 			if (checkOriginRefs) {
 				const originRef = `origin/${effectiveBaseBranch}`;
 				if (await refExistsLocally(mainRepoPath, originRef)) {
@@ -204,7 +225,6 @@ export async function initializeWorkspaceWorktree({
 				}
 			}
 
-			// Try local branch
 			if (await refExistsLocally(mainRepoPath, effectiveBaseBranch)) {
 				console.log(
 					`[workspace-init] ${reason}. Using local branch: ${effectiveBaseBranch}`,
@@ -212,7 +232,6 @@ export async function initializeWorkspaceWorktree({
 				return { ref: effectiveBaseBranch };
 			}
 
-			// Only try fallback branches if the base branch was auto-derived
 			if (baseBranchWasExplicit) {
 				console.log(
 					`[workspace-init] ${reason}. Base branch "${effectiveBaseBranch}" was explicitly set, not using fallback.`,
@@ -220,11 +239,9 @@ export async function initializeWorkspaceWorktree({
 				return null;
 			}
 
-			// Fallback: try common default branch names
 			const commonBranches = ["main", "master", "develop", "trunk"];
 			for (const branch of commonBranches) {
-				if (branch === effectiveBaseBranch) continue; // Already tried
-				// Only check origin refs if remote exists
+				if (branch === effectiveBaseBranch) continue;
 				if (checkOriginRefs) {
 					const fallbackOriginRef = `origin/${branch}`;
 					if (await refExistsLocally(mainRepoPath, fallbackOriginRef)) {
@@ -245,17 +262,43 @@ export async function initializeWorkspaceWorktree({
 			return null;
 		};
 
-		// Helper to update baseBranch when fallback is used
-		const applyFallbackBranch = (fallbackBranch: string) => {
-			console.log(
-				`[workspace-init] Updating baseBranch from "${effectiveBaseBranch}" to "${fallbackBranch}" for workspace ${workspaceId}`,
-			);
-			effectiveBaseBranch = fallbackBranch;
-			localDb
-				.update(worktrees)
-				.set({ baseBranch: fallbackBranch })
-				.where(eq(worktrees.id, worktreeId))
-				.run();
+		const resolveLocalRef = async ({
+			reason,
+			checkOriginRefs,
+			progressStep,
+		}: {
+			reason: string;
+			checkOriginRefs: boolean;
+			progressStep: WorkspaceInitStep;
+		}): Promise<string | null> => {
+			const result = await resolveLocalStartPoint(reason, checkOriginRefs);
+			if (!result) return null;
+
+			if (result.fallbackBranch) {
+				const originalBranch = effectiveBaseBranch;
+				console.log(
+					`[workspace-init] Updating baseBranch from "${originalBranch}" to "${result.fallbackBranch}" for workspace ${workspaceId}`,
+				);
+				effectiveBaseBranch = result.fallbackBranch;
+				await setBranchBaseConfig({
+					repoPath: mainRepoPath,
+					branch,
+					baseBranch: result.fallbackBranch,
+					isExplicit: false,
+				});
+				localDb
+					.update(worktrees)
+					.set({ baseBranch: result.fallbackBranch })
+					.where(eq(worktrees.id, worktreeId))
+					.run();
+				manager.updateProgress(
+					workspaceId,
+					progressStep,
+					`Using "${result.fallbackBranch}" branch`,
+					`Branch "${originalBranch}" not found. Using "${result.fallbackBranch}" instead.`,
+				);
+			}
+			return result.ref;
 		};
 
 		let startPoint: string;
@@ -265,61 +308,54 @@ export async function initializeWorkspaceWorktree({
 				effectiveBaseBranch,
 			);
 
-			if (branchCheck.status === "error") {
-				const sanitizedError = sanitizeGitError(branchCheck.message);
-				console.warn(
-					`[workspace-init] Cannot verify remote branch: ${sanitizedError}. Falling back to local ref.`,
-				);
+			if (branchCheck.status === "exists") {
+				startPoint = `origin/${effectiveBaseBranch}`;
+			} else {
+				const isNetworkError = branchCheck.status === "error";
+				const fallbackReason = isNetworkError
+					? sanitizeGitError(branchCheck.message)
+					: `Branch "${effectiveBaseBranch}" not found on remote`;
 
+				console.warn(
+					`[workspace-init] ${fallbackReason}. Falling back to local ref.`,
+				);
 				manager.updateProgress(
 					workspaceId,
 					"verifying",
-					"Using local reference (remote unavailable)",
-					sanitizedError,
+					isNetworkError
+						? "Using local reference (remote unavailable)"
+						: "Using local reference (not on remote)",
+					fallbackReason,
 				);
 
-				const localResult = await resolveLocalStartPoint(
-					"Remote unavailable",
-					true,
-				);
-				if (!localResult) {
+				const ref = await resolveLocalRef({
+					reason: isNetworkError ? "Remote unavailable" : "Not found on remote",
+					checkOriginRefs: true,
+					progressStep: "verifying",
+				});
+				if (!ref) {
+					const failureDetail = isNetworkError
+						? "Cannot reach remote"
+						: "Does not exist on remote";
 					manager.updateProgress(
 						workspaceId,
 						"failed",
 						"No local reference available",
 						baseBranchWasExplicit
-							? `Cannot reach remote and branch "${effectiveBaseBranch}" doesn't exist locally. Please check your network connection and try again.`
-							: `Cannot reach remote and no local ref for "${effectiveBaseBranch}" exists. Please check your network connection and try again.`,
+							? `${failureDetail} and branch "${effectiveBaseBranch}" doesn't exist locally.${isNetworkError ? " Please check your network connection and try again." : " Please try again with a different base branch."}`
+							: `${failureDetail} and no local ref for "${effectiveBaseBranch}" exists.${isNetworkError ? " Please check your network connection and try again." : ""}`,
 					);
 					return;
 				}
-				if (localResult.fallbackBranch) {
-					applyFallbackBranch(localResult.fallbackBranch);
-					manager.updateProgress(
-						workspaceId,
-						"verifying",
-						`Using "${localResult.fallbackBranch}" branch`,
-						`Branch "${baseBranch}" not found locally. Using "${localResult.fallbackBranch}" instead.`,
-					);
-				}
-				startPoint = localResult.ref;
-			} else if (branchCheck.status === "not_found") {
-				manager.updateProgress(
-					workspaceId,
-					"failed",
-					"Branch does not exist on remote",
-					`Branch "${effectiveBaseBranch}" does not exist on origin. Please delete this workspace and try again with a different base branch.`,
-				);
-				return;
-			} else {
-				startPoint = `origin/${effectiveBaseBranch}`;
+				startPoint = ref;
 			}
 		} else {
-			const localResult = await resolveLocalStartPoint(
-				"No remote configured",
-				false,
-			);
-			if (!localResult) {
+			const ref = await resolveLocalRef({
+				reason: "No remote configured",
+				checkOriginRefs: false,
+				progressStep: "verifying",
+			});
+			if (!ref) {
 				manager.updateProgress(
 					workspaceId,
 					"failed",
@@ -330,16 +366,7 @@ export async function initializeWorkspaceWorktree({
 				);
 				return;
 			}
-			if (localResult.fallbackBranch) {
-				applyFallbackBranch(localResult.fallbackBranch);
-				manager.updateProgress(
-					workspaceId,
-					"verifying",
-					`Using "${localResult.fallbackBranch}" branch`,
-					`Branch "${baseBranch}" not found locally. Using "${localResult.fallbackBranch}" instead.`,
-				);
-			}
-			startPoint = localResult.ref;
+			startPoint = ref;
 		}
 
 		if (manager.isCancellationRequested(workspaceId)) {
@@ -355,17 +382,17 @@ export async function initializeWorkspaceWorktree({
 			try {
 				await fetchDefaultBranch(mainRepoPath, effectiveBaseBranch);
 			} catch (fetchError) {
-				// Fetch failed - verify local tracking ref exists before proceeding
 				const originRef = `origin/${effectiveBaseBranch}`;
 				if (!(await refExistsLocally(mainRepoPath, originRef))) {
 					console.warn(
 						`[workspace-init] Fetch failed and local ref "${originRef}" doesn't exist. Attempting local fallback.`,
 					);
-					const localResult = await resolveLocalStartPoint(
-						"Fetch failed and remote tracking ref unavailable",
-						true,
-					);
-					if (!localResult) {
+					const ref = await resolveLocalRef({
+						reason: "Fetch failed and remote tracking ref unavailable",
+						checkOriginRefs: true,
+						progressStep: "fetching",
+					});
+					if (!ref) {
 						const sanitizedError = sanitizeGitError(
 							fetchError instanceof Error
 								? fetchError.message
@@ -375,26 +402,13 @@ export async function initializeWorkspaceWorktree({
 							workspaceId,
 							"failed",
 							"Cannot fetch branch",
-							baseBranchWasExplicit
-								? `Failed to fetch "${effectiveBaseBranch}" and it doesn't exist locally. ` +
-										`Please check your network connection or try running "git fetch origin ${effectiveBaseBranch}" manually. ` +
-										`Error: ${sanitizedError}`
-								: `Failed to fetch "${effectiveBaseBranch}" and no local reference exists. ` +
-										`Please check your network connection or try running "git fetch origin ${effectiveBaseBranch}" manually. ` +
-										`Error: ${sanitizedError}`,
+							`Failed to fetch "${effectiveBaseBranch}" and no local reference exists. ` +
+								`Please check your network connection or try running "git fetch origin ${effectiveBaseBranch}" manually. ` +
+								`Error: ${sanitizedError}`,
 						);
 						return;
 					}
-					if (localResult.fallbackBranch) {
-						applyFallbackBranch(localResult.fallbackBranch);
-						manager.updateProgress(
-							workspaceId,
-							"fetching",
-							`Using "${localResult.fallbackBranch}" branch`,
-							`Could not fetch "${baseBranch}". Using local "${localResult.fallbackBranch}" branch instead.`,
-						);
-					}
-					startPoint = localResult.ref;
+					startPoint = ref;
 				}
 			}
 		}
@@ -450,13 +464,15 @@ export async function initializeWorkspaceWorktree({
 				gitStatus: {
 					branch,
 					needsRebase: false,
+					ahead: 0,
+					behind: 0,
 					lastRefreshed: Date.now(),
 				},
 			})
 			.where(eq(worktrees.id, worktreeId))
 			.run();
 
-		manager.updateProgress(workspaceId, "ready", "Ready");
+		await completeReadyState();
 
 		track("workspace_initialized", {
 			workspace_id: workspaceId,

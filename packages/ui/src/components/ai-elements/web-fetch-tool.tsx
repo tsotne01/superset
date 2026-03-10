@@ -4,7 +4,7 @@ import { GlobeIcon } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../../lib/utils";
 import { Loader } from "./loader";
-import { Shimmer } from "./shimmer";
+import { ShimmerLabel } from "./shimmer-label";
 
 type WebFetchToolState =
 	| "input-streaming"
@@ -51,12 +51,7 @@ export const WebFetchTool = ({
 	const hostname = url ? extractHostname(url) : "";
 
 	return (
-		<div
-			className={cn(
-				"overflow-hidden rounded-lg border border-border bg-muted/30",
-				className,
-			)}
-		>
+		<div className={cn("overflow-hidden rounded-md", className)}>
 			{/* Header */}
 			{/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: interactive tool header */}
 			<div
@@ -64,20 +59,16 @@ export const WebFetchTool = ({
 					"flex h-7 items-center justify-between px-2.5",
 					hasContent &&
 						!isPending &&
-						"cursor-pointer transition-colors duration-150 hover:bg-muted/50",
+						"cursor-pointer transition-colors duration-150 hover:bg-muted/30",
 				)}
 				onClick={() => hasContent && !isPending && setIsExpanded(!isExpanded)}
 			>
 				<div className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-xs">
 					<GlobeIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
 					{isPending ? (
-						<Shimmer
-							as="span"
-							duration={1.2}
-							className="text-xs text-muted-foreground"
-						>
+						<ShimmerLabel className="text-xs text-muted-foreground">
 							Fetching
-						</Shimmer>
+						</ShimmerLabel>
 					) : (
 						<span className="text-xs text-muted-foreground">Fetched</span>
 					)}
@@ -106,7 +97,7 @@ export const WebFetchTool = ({
 
 			{/* Content */}
 			{hasContent && isExpanded && (
-				<div className="max-h-[300px] overflow-y-auto border-t border-border">
+				<div className="mt-0.5 max-h-[300px] overflow-y-auto">
 					<pre className="whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-xs text-foreground">
 						{content}
 					</pre>

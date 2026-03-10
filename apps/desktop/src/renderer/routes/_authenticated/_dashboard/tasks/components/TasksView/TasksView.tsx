@@ -1,47 +1,148 @@
-import { ScrollArea } from "@superset/ui/scroll-area";
 import { Spinner } from "@superset/ui/spinner";
-import { eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HiCheckCircle } from "react-icons/hi2";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
+import { useTasksFilterStore } from "../../stores/tasks-filter-state";
 import { LinearCTA } from "./components/LinearCTA";
 import { TasksTableView } from "./components/TasksTableView";
 import { type TabValue, TasksTopBar } from "./components/TasksTopBar";
 import { type TaskWithStatus, useTasksTable } from "./hooks/useTasksTable";
 
-export function TasksView() {
+interface TasksViewProps {
+	initialTab?: "all" | "active" | "backlog";
+	initialAssignee?: string;
+	initialSearch?: string;
+}
+
+export function TasksView({
+	initialTab,
+	initialAssignee,
+	initialSearch,
+}: TasksViewProps) {
 	const navigate = useNavigate();
 	const collections = useCollections();
-	const [currentTab, setCurrentTab] = useState<TabValue>("all");
-	const [searchQuery, setSearchQuery] = useState("");
-	const [assigneeFilter, setAssigneeFilter] = useState<string | null>(null);
+	const currentTab: TabValue = initialTab ?? "all";
+	const [searchQuery, setSearchQuery] = useState(initialSearch ?? "");
+	const assigneeFilter = initialAssignee ?? null;
+
+	const {
+		setTab: storeSetTab,
+		setAssignee: storeSetAssignee,
+		setSearch: storeSetSearch,
+	} = useTasksFilterStore();
+
+	const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+	const syncSearchToUrl = useCallback(
+		(query: string) => {
+			if (debounceRef.current) clearTimeout(debounceRef.current);
+			debounceRef.current = setTimeout(() => {
+				const search: Record<string, string> = {};
+				if (currentTab !== "all") search.tab = currentTab;
+				if (assigneeFilter) search.assignee = assigneeFilter;
+				if (query) search.search = query;
+				navigate({ to: "/tasks", search, replace: true });
+			}, 300);
+		},
+		[navigate, currentTab, assigneeFilter],
+	);
+
+	useEffect(() => {
+		return () => {
+			if (debounceRef.current) clearTimeout(debounceRef.current);
+		};
+	}, []);
+
+	const handleSearchChange = useCallback(
+		(query: string) => {
+			setSearchQuery(query);
+			storeSetSearch(query);
+			syncSearchToUrl(query);
+		},
+		[storeSetSearch, syncSearchToUrl],
+	);
+
+	useEffect(() => {
+		storeSetTab(currentTab);
+	}, [currentTab, storeSetTab]);
+
+	useEffect(() => {
+		storeSetAssignee(assigneeFilter);
+	}, [assigneeFilter, storeSetAssignee]);
+
+	useEffect(() => {
+		storeSetSearch(searchQuery);
+	}, [searchQuery, storeSetSearch]);
 
 	const { data: integrations, isLoading: isCheckingLinear } = useLiveQuery(
 		(q) =>
 			q
 				.from({ integrationConnections: collections.integrationConnections })
-				.where(({ integrationConnections }) =>
-					eq(integrationConnections.provider, "linear"),
-				)
-				.select(({ integrationConnections }) => integrationConnections),
+				.select(({ integrationConnections }) => ({
+					...integrationConnections,
+				})),
 		[collections],
 	);
 
-	const isLinearConnected = integrations && integrations.length > 0;
+	const isLinearConnected =
+		integrations?.some((i) => i.provider === "linear") ?? false;
 
-	const { table, isLoading, slugColumnWidth } = useTasksTable({
-		filterTab: currentTab,
-		searchQuery,
-		assigneeFilter,
-	});
+	const { table, isLoading, slugColumnWidth, rowSelection, setRowSelection } =
+		useTasksTable({
+			filterTab: currentTab,
+			searchQuery,
+			assigneeFilter,
+		});
+
+	const selectedTasks = useMemo(() => {
+		if (!Object.values(rowSelection).some(Boolean)) return [];
+
+		return table
+			.getRowModel()
+			.rows.filter((row) => row.getIsSelected() && !row.getIsGrouped())
+			.map((row) => row.original);
+	}, [rowSelection, table]);
+
+	const handleTabChange = (tab: TabValue) => {
+		const search: Record<string, string> = {};
+		if (tab !== "all") search.tab = tab;
+		if (assigneeFilter) search.assignee = assigneeFilter;
+		if (searchQuery) search.search = searchQuery;
+		navigate({
+			to: "/tasks",
+			search,
+			replace: true,
+		});
+	};
+
+	const handleAssigneeFilterChange = (assignee: string | null) => {
+		const search: Record<string, string> = {};
+		if (currentTab !== "all") search.tab = currentTab;
+		if (assignee) search.assignee = assignee;
+		if (searchQuery) search.search = searchQuery;
+		navigate({
+			to: "/tasks",
+			search,
+			replace: true,
+		});
+	};
 
 	const handleTaskClick = (task: TaskWithStatus) => {
+		const search: Record<string, string> = {};
+		if (currentTab !== "all") search.tab = currentTab;
+		if (assigneeFilter) search.assignee = assigneeFilter;
+		if (searchQuery) search.search = searchQuery;
 		navigate({
 			to: "/tasks/$taskId",
 			params: { taskId: task.id },
+			search,
 		});
+	};
+
+	const handleClearSelection = () => {
+		setRowSelection({});
 	};
 
 	const showLoading = isLoading || isCheckingLinear;
@@ -56,11 +157,13 @@ export function TasksView() {
 			{!showLinearCTA && (
 				<TasksTopBar
 					currentTab={currentTab}
-					onTabChange={setCurrentTab}
+					onTabChange={handleTabChange}
 					searchQuery={searchQuery}
-					onSearchChange={setSearchQuery}
+					onSearchChange={handleSearchChange}
 					assigneeFilter={assigneeFilter}
-					onAssigneeFilterChange={setAssigneeFilter}
+					onAssigneeFilterChange={handleAssigneeFilterChange}
+					selectedTasks={selectedTasks}
+					onClearSelection={handleClearSelection}
 				/>
 			)}
 
@@ -78,13 +181,11 @@ export function TasksView() {
 					</div>
 				</div>
 			) : showTable ? (
-				<ScrollArea className="flex-1 min-h-0">
-					<TasksTableView
-						table={table}
-						slugColumnWidth={slugColumnWidth}
-						onTaskClick={handleTaskClick}
-					/>
-				</ScrollArea>
+				<TasksTableView
+					table={table}
+					slugColumnWidth={slugColumnWidth}
+					onTaskClick={handleTaskClick}
+				/>
 			) : null}
 		</div>
 	);

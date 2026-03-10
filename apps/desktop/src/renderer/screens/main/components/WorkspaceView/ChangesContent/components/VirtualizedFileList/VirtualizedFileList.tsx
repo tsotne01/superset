@@ -1,7 +1,9 @@
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { type RefObject, useCallback, useRef } from "react";
+import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
+import { type RefObject, useRef } from "react";
 import type { ChangeCategory, ChangedFile } from "shared/changes-types";
+import { createFileKey } from "../../context";
 import { FileDiffSection } from "../FileDiffSection";
+import { getEstimatedFileDiffSectionHeight } from "./utils/getEstimatedFileDiffSectionHeight";
 
 interface VirtualizedFileListProps {
 	files: ChangedFile[];
@@ -18,8 +20,7 @@ interface VirtualizedFileListProps {
 	isActioning?: boolean;
 }
 
-const ESTIMATED_COLLAPSED_HEIGHT = 60;
-const OVERSCAN = 5;
+const OVERSCAN = 1;
 
 export function VirtualizedFileList({
 	files,
@@ -36,35 +37,20 @@ export function VirtualizedFileList({
 	isActioning = false,
 }: VirtualizedFileListProps) {
 	const listRef = useRef<HTMLDivElement>(null);
-	const renderedIndicesRef = useRef<Set<number>>(new Set());
-
-	const rangeExtractor = useCallback(
-		(range: { startIndex: number; endIndex: number }) => {
-			const indices = new Set<number>(renderedIndicesRef.current);
-
-			const start = Math.max(0, range.startIndex - OVERSCAN);
-			const end = Math.min(files.length - 1, range.endIndex + OVERSCAN);
-			for (let i = start; i <= end; i++) {
-				indices.add(i);
-			}
-
-			for (const idx of indices) {
-				if (idx >= files.length) {
-					indices.delete(idx);
-				}
-			}
-
-			renderedIndicesRef.current = indices;
-			return Array.from(indices).sort((a, b) => a - b);
-		},
-		[files.length],
-	);
 
 	const virtualizer = useVirtualizer({
 		count: files.length,
 		getScrollElement: () => scrollElementRef.current,
-		estimateSize: () => ESTIMATED_COLLAPSED_HEIGHT,
-		rangeExtractor,
+		estimateSize: (index) => {
+			const file = files[index];
+			const fileKey = createFileKey(file, category, commitHash, worktreePath);
+			return getEstimatedFileDiffSectionHeight({
+				file,
+				isCollapsed: collapsedFiles.has(fileKey),
+			});
+		},
+		rangeExtractor: defaultRangeExtractor,
+		overscan: OVERSCAN,
 		scrollMargin: listRef.current?.offsetTop ?? 0,
 	});
 
@@ -78,9 +64,12 @@ export function VirtualizedFileList({
 			>
 				{items.map((virtualRow) => {
 					const file = files[virtualRow.index];
-					const fileKey = commitHash
-						? `${category}:${commitHash}:${file.path}`
-						: `${category}::${file.path}`;
+					const fileKey = createFileKey(
+						file,
+						category,
+						commitHash,
+						worktreePath,
+					);
 
 					return (
 						<div

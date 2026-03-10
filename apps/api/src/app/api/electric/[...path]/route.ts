@@ -3,20 +3,48 @@ import { auth } from "@superset/auth/server";
 import { env } from "@/env";
 import { buildWhereClause } from "./utils";
 
+interface AuthInfo {
+	userId: string;
+	organizationIds: string[];
+}
+
+async function authenticate(request: Request): Promise<AuthInfo | null> {
+	const bearer = request.headers.get("Authorization");
+	if (bearer?.startsWith("Bearer ")) {
+		const token = bearer.slice(7);
+		try {
+			const { payload } = await auth.api.verifyJWT({ body: { token } });
+			if (payload?.sub && Array.isArray(payload.organizationIds)) {
+				return {
+					userId: payload.sub,
+					organizationIds: payload.organizationIds as string[],
+				};
+			}
+		} catch {}
+	}
+
+	const sessionData = await auth.api.getSession({ headers: request.headers });
+	if (!sessionData?.user) return null;
+	return {
+		userId: sessionData.user.id,
+		organizationIds: sessionData.session.organizationIds ?? [],
+	};
+}
+
 export async function GET(request: Request): Promise<Response> {
-	const sessionData = await auth.api.getSession({
-		headers: request.headers,
-	});
-	if (!sessionData?.user) {
+	const authInfo = await authenticate(request);
+	if (!authInfo) {
 		return new Response("Unauthorized", { status: 401 });
 	}
 
-	const organizationId = sessionData.session.activeOrganizationId;
-	if (!organizationId) {
-		return new Response("No active organization", { status: 400 });
+	const url = new URL(request.url);
+
+	const organizationId = url.searchParams.get("organizationId");
+
+	if (organizationId && !authInfo.organizationIds.includes(organizationId)) {
+		return new Response("Not a member of this organization", { status: 403 });
 	}
 
-	const url = new URL(request.url);
 	const originUrl = new URL(env.ELECTRIC_URL);
 	originUrl.searchParams.set("secret", env.ELECTRIC_SECRET);
 
@@ -33,8 +61,8 @@ export async function GET(request: Request): Promise<Response> {
 
 	const whereClause = await buildWhereClause(
 		tableName,
-		organizationId,
-		sessionData.user.id,
+		organizationId ?? "",
+		authInfo.userId,
 	);
 	if (!whereClause) {
 		return new Response(`Unknown table: ${tableName}`, { status: 400 });
@@ -53,18 +81,24 @@ export async function GET(request: Request): Promise<Response> {
 		);
 	}
 
-	let response = await fetch(originUrl.toString());
-
-	if (response.headers.get("content-encoding")) {
-		const headers = new Headers(response.headers);
-		headers.delete("content-encoding");
-		headers.delete("content-length");
-		response = new Response(response.body, {
-			status: response.status,
-			statusText: response.statusText,
-			headers,
-		});
+	if (tableName === "integration_connections") {
+		originUrl.searchParams.set(
+			"columns",
+			"id,organization_id,connected_by_user_id,provider,token_expires_at,external_org_id,external_org_name,config,created_at,updated_at",
+		);
 	}
 
-	return response;
+	const response = await fetch(originUrl.toString());
+
+	const headers = new Headers(response.headers);
+	if (headers.get("content-encoding")) {
+		headers.delete("content-encoding");
+		headers.delete("content-length");
+	}
+
+	return new Response(response.body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers,
+	});
 }

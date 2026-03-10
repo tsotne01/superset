@@ -13,7 +13,7 @@ Presets let you quickly launch terminals with pre-configured commands. Save comm
 
 - **Custom commands for new tabs** - Define commands that run when opening a terminal
 - **Working directory** - Specify where commands run in your project (e.g., `apps/web`)
-- **Sequential or parallel execution** - Run commands one after another, or in split panes
+- **Split pane or new tab launch mode** - Run commands in parallel in one tab, or one tab per command
 - **Default preset** - Auto-apply a preset to new workspaces
 - **Quick-add templates** - One-click setup for Claude, Codex, Gemini, and other agents
 
@@ -29,17 +29,15 @@ Each preset has:
 | **Description** | Optional description |
 | **Working Directory** | Relative path in your project (leave empty for root) |
 | **Commands** | One or more commands to run |
-| **Mode** | Sequential (&&) or Parallel (split panes) |
+| **Mode** | Split Pane (parallel panes) or New Tab (parallel tabs) |
 
-## Execution Modes
+## Launch Modes
 
-**Sequential** - Commands run one after another in a single terminal, joined with `&&`:
+**Split Pane** - Commands run in parallel in a single tab, with one split pane per command.
 
-```bash
-bun install && bun dev
-```
+**New Tab** - Commands run in parallel in separate tabs, with one tab per command.
 
-**Parallel** - Each command runs in its own split pane within a single tab. Useful for running a dev server and tests simultaneously.
+Presets are parallel by default.
 
 ## Quick-Add Templates
 
@@ -51,10 +49,24 @@ Pre-configured presets for popular AI agents:
 - **cursor-agent** - Cursor AI agent
 - **opencode** - Open-source AI coding agent
 
+## Preset Bar
+
+The preset bar appears above terminal tabs and shows your pinned presets for one-click access.
+
+- **Pin a preset** - Use the preset bar menu to pin presets so they appear in the bar
+- **Launch** - Click a pinned preset to open it in the current workspace
+- **Right-click** - Open in the current terminal, current tab, or a new tab, or edit the preset
+- **Reorder** - Drag pinned items to rearrange their order in the bar
+- **Manage** - Use the gear menu to browse presets, add quick-add templates, and show or hide the bar
+
 ## Default Preset
 
-Mark a preset as default to auto-apply it when:
-- Creating new terminal tabs (if "Auto-apply default preset" is enabled)
-- Creating new workspaces
+Mark a preset as default to auto-apply it when creating workspaces or opening new tabs.
 
-Enable **Auto-apply default preset** in Settings → Terminal to automatically run your default preset in new workspaces.
+**Auto-apply settings** in Settings → Terminal:
+- **Apply preset on workspace creation** - Runs default preset when creating new workspaces
+- **Apply preset on new tab** - Runs default preset when opening new terminal tabs/panes/splits
+
+Both settings are enabled by default. Disable either to prevent automatic preset application in that context.
+
+Explicit preset launches (via hotkey or menu) always work regardless of these settings.

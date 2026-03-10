@@ -1,4 +1,5 @@
 import { Button } from "@superset/ui/button";
+import { toast } from "@superset/ui/sonner";
 import { Spinner } from "@superset/ui/spinner";
 import {
 	createFileRoute,
@@ -6,6 +7,7 @@ import {
 	Outlet,
 	useNavigate,
 } from "@tanstack/react-router";
+import { useRef } from "react";
 import { DndProvider } from "react-dnd";
 import { HiOutlineWifi } from "react-icons/hi2";
 import { NewWorkspaceModal } from "renderer/components/NewWorkspaceModal";
@@ -16,6 +18,7 @@ import { useOnlineStatus } from "renderer/hooks/useOnlineStatus";
 import { authClient, getAuthToken } from "renderer/lib/auth-client";
 import { dragDropManager } from "renderer/lib/dnd";
 import { electronTrpc } from "renderer/lib/electron-trpc";
+import { InitGitDialog } from "renderer/react-query/projects/InitGitDialog";
 import { WorkspaceInitEffects } from "renderer/screens/main/components/WorkspaceInitEffects";
 import { useHotkeysSync } from "renderer/stores/hotkeys";
 import { useAgentHookListener } from "renderer/stores/tabs/useAgentHookListener";
@@ -24,17 +27,24 @@ import { MOCK_ORG_ID } from "shared/constants";
 import { AgentHooks } from "./components/AgentHooks";
 import { TeardownLogsDialog } from "./components/TeardownLogsDialog";
 import { CollectionsProvider } from "./providers/CollectionsProvider";
+import { HostServiceProvider } from "./providers/HostServiceProvider";
 
 export const Route = createFileRoute("/_authenticated")({
 	component: AuthenticatedLayout,
 });
 
 function AuthenticatedLayout() {
-	const { data: session, isPending, refetch } = authClient.useSession();
+	const {
+		data: session,
+		isPending,
+		isRefetching,
+		refetch,
+	} = authClient.useSession();
 	const hasLocalToken = !!getAuthToken();
 	const isOnline = useOnlineStatus();
 	const navigate = useNavigate();
 	const utils = electronTrpc.useUtils();
+	const shownWorkspaceInitWarningsRef = useRef(new Set<string>());
 
 	const isSignedIn = env.SKIP_ENV_VALIDATION || !!session?.user;
 	const activeOrganizationId = env.SKIP_ENV_VALIDATION
@@ -50,6 +60,15 @@ function AuthenticatedLayout() {
 	electronTrpc.workspaces.onInitProgress.useSubscription(undefined, {
 		onData: (progress) => {
 			updateInitProgress(progress);
+			if (
+				progress.warning &&
+				!shownWorkspaceInitWarningsRef.current.has(progress.workspaceId)
+			) {
+				shownWorkspaceInitWarningsRef.current.add(progress.workspaceId);
+				toast.warning("Workspace created without auto-name", {
+					description: progress.warning,
+				});
+			}
 			if (progress.step === "ready" || progress.step === "failed") {
 				// Invalidate both the grouped list AND the specific workspace
 				utils.workspaces.getAllGrouped.invalidate();
@@ -73,15 +92,18 @@ function AuthenticatedLayout() {
 		},
 	});
 
-	if (isPending && !env.SKIP_ENV_VALIDATION) {
-		if (hasLocalToken) {
-			return (
-				<div className="flex h-screen w-screen items-center justify-center bg-background">
-					<Spinner className="size-8" />
-				</div>
-			);
-		}
+	if (isPending && !hasLocalToken && !env.SKIP_ENV_VALIDATION) {
 		return <Navigate to="/sign-in" replace />;
+	}
+	if (
+		(isPending || (isRefetching && !session?.user && hasLocalToken)) &&
+		!env.SKIP_ENV_VALIDATION
+	) {
+		return (
+			<div className="flex h-screen w-screen items-center justify-center bg-background">
+				<Spinner className="size-8" />
+			</div>
+		);
 	}
 
 	if (!isSignedIn && hasLocalToken && !isOnline) {
@@ -112,12 +134,15 @@ function AuthenticatedLayout() {
 	return (
 		<DndProvider manager={dragDropManager}>
 			<CollectionsProvider>
-				<AgentHooks />
-				<Outlet />
-				<WorkspaceInitEffects />
-				<NewWorkspaceModal />
-				<TeardownLogsDialog />
-				<Paywall />
+				<HostServiceProvider>
+					<AgentHooks />
+					<Outlet />
+					<WorkspaceInitEffects />
+					<NewWorkspaceModal />
+					<InitGitDialog />
+					<TeardownLogsDialog />
+					<Paywall />
+				</HostServiceProvider>
 			</CollectionsProvider>
 		</DndProvider>
 	);

@@ -1,3 +1,7 @@
+import {
+	retargetAbsolutePath,
+	toRelativeWorkspacePath,
+} from "shared/absolute-paths";
 import type {
 	ChangeCategory,
 	ChangedFile,
@@ -5,10 +9,15 @@ import type {
 } from "shared/changes-types";
 import { create } from "zustand";
 import { devtools, persist } from "zustand/middleware";
+import {
+	DEFAULT_CHANGE_SECTION_ORDER,
+	normalizeChangeSectionOrder,
+} from "./section-order";
 
 type FileListViewMode = "grouped" | "tree";
 
 interface SelectedFileState {
+	absolutePath: string;
 	file: ChangedFile;
 	category: ChangeCategory;
 	commitHash: string | null;
@@ -19,27 +28,36 @@ interface ChangesState {
 	viewMode: DiffViewMode;
 	fileListViewMode: FileListViewMode;
 	expandedSections: Record<ChangeCategory, boolean>;
-	baseBranch: Record<string, string | null>;
+	sectionOrder: ChangeCategory[];
 	showRenderedMarkdown: Record<string, boolean>;
 	hideUnchangedRegions: boolean;
+	focusMode: boolean;
 
 	selectFile: (
-		worktreePath: string,
+		workspaceId: string,
+		absolutePath: string | null,
 		file: ChangedFile | null,
 		category?: ChangeCategory,
 		commitHash?: string | null,
 	) => void;
-	getSelectedFile: (worktreePath: string) => SelectedFileState | null;
+	retargetSelectedFile: (
+		workspaceId: string,
+		oldAbsolutePath: string,
+		newAbsolutePath: string,
+		worktreePath: string,
+		isDirectory: boolean,
+	) => void;
+	getSelectedFile: (workspaceId: string) => SelectedFileState | null;
 	setViewMode: (mode: DiffViewMode) => void;
 	setFileListViewMode: (mode: FileListViewMode) => void;
 	toggleSection: (section: ChangeCategory) => void;
 	setSectionExpanded: (section: ChangeCategory, expanded: boolean) => void;
-	setBaseBranch: (worktreePath: string, branch: string | null) => void;
-	getBaseBranch: (worktreePath: string) => string | null;
+	moveSection: (fromSection: ChangeCategory, toSection: ChangeCategory) => void;
 	toggleRenderedMarkdown: (worktreePath: string) => void;
 	getShowRenderedMarkdown: (worktreePath: string) => boolean;
 	toggleHideUnchangedRegions: () => void;
-	reset: (worktreePath: string) => void;
+	toggleFocusMode: () => void;
+	reset: (workspaceId: string) => void;
 }
 
 const initialState = {
@@ -52,9 +70,10 @@ const initialState = {
 		staged: true,
 		unstaged: true,
 	},
-	baseBranch: {} as Record<string, string | null>,
+	sectionOrder: [...DEFAULT_CHANGE_SECTION_ORDER],
 	showRenderedMarkdown: {} as Record<string, boolean>,
 	hideUnchangedRegions: false,
+	focusMode: false,
 };
 
 export const useChangesStore = create<ChangesState>()(
@@ -63,24 +82,64 @@ export const useChangesStore = create<ChangesState>()(
 			(set, get) => ({
 				...initialState,
 
-				selectFile: (worktreePath, file, category, commitHash) => {
+				selectFile: (workspaceId, absolutePath, file, category, commitHash) => {
 					const { selectedFiles } = get();
 					set({
 						selectedFiles: {
 							...selectedFiles,
-							[worktreePath]: file
-								? {
-										file,
-										category: category ?? "against-base",
-										commitHash: commitHash ?? null,
-									}
-								: null,
+							[workspaceId]:
+								file && absolutePath
+									? {
+											absolutePath,
+											file,
+											category: category ?? "against-base",
+											commitHash: commitHash ?? null,
+										}
+									: null,
 						},
 					});
 				},
 
-				getSelectedFile: (worktreePath) => {
-					return get().selectedFiles[worktreePath] ?? null;
+				retargetSelectedFile: (
+					workspaceId,
+					oldAbsolutePath,
+					newAbsolutePath,
+					worktreePath,
+					isDirectory,
+				) => {
+					const currentSelection = get().selectedFiles[workspaceId];
+					if (!currentSelection) {
+						return;
+					}
+
+					const nextAbsolutePath = retargetAbsolutePath(
+						currentSelection.absolutePath,
+						oldAbsolutePath,
+						newAbsolutePath,
+						isDirectory,
+					);
+
+					if (!nextAbsolutePath) {
+						return;
+					}
+
+					set({
+						selectedFiles: {
+							...get().selectedFiles,
+							[workspaceId]: {
+								...currentSelection,
+								absolutePath: nextAbsolutePath,
+								file: {
+									...currentSelection.file,
+									path: toRelativeWorkspacePath(worktreePath, nextAbsolutePath),
+								},
+							},
+						},
+					});
+				},
+
+				getSelectedFile: (workspaceId) => {
+					return get().selectedFiles[workspaceId] ?? null;
 				},
 
 				setViewMode: (mode) => {
@@ -111,18 +170,23 @@ export const useChangesStore = create<ChangesState>()(
 					});
 				},
 
-				setBaseBranch: (worktreePath, branch) => {
-					const { baseBranch } = get();
-					set({
-						baseBranch: {
-							...baseBranch,
-							[worktreePath]: branch,
-						},
-					});
-				},
+				moveSection: (fromSection, toSection) => {
+					if (fromSection === toSection) return;
 
-				getBaseBranch: (worktreePath) => {
-					return get().baseBranch[worktreePath] ?? null;
+					const nextSectionOrder = normalizeChangeSectionOrder(
+						get().sectionOrder,
+					);
+					const fromIndex = nextSectionOrder.indexOf(fromSection);
+					const toIndex = nextSectionOrder.indexOf(toSection);
+
+					if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
+						return;
+					}
+
+					const reordered = [...nextSectionOrder];
+					const [moved] = reordered.splice(fromIndex, 1);
+					reordered.splice(toIndex, 0, moved);
+					set({ sectionOrder: reordered });
 				},
 
 				toggleRenderedMarkdown: (worktreePath) => {
@@ -143,22 +207,37 @@ export const useChangesStore = create<ChangesState>()(
 					set({ hideUnchangedRegions: !get().hideUnchangedRegions });
 				},
 
-				reset: (worktreePath) => {
+				toggleFocusMode: () => {
+					set({ focusMode: !get().focusMode });
+				},
+
+				reset: (workspaceId) => {
 					const { selectedFiles } = get();
 					set({
 						selectedFiles: {
 							...selectedFiles,
-							[worktreePath]: null,
+							[workspaceId]: null,
 						},
 					});
 				},
 			}),
 			{
 				name: "changes-store",
-				version: 1,
-				migrate: (persisted) => {
+				version: 4,
+				migrate: (persisted, version) => {
 					const state = persisted as Record<string, unknown>;
-					state.baseBranch = {};
+					if (version < 2) {
+						delete state.baseBranch;
+					}
+					if (version < 3) {
+						state.sectionOrder = [...DEFAULT_CHANGE_SECTION_ORDER];
+					}
+					if (version < 4) {
+						state.selectedFiles = {};
+					}
+					state.sectionOrder = normalizeChangeSectionOrder(
+						state.sectionOrder as ChangeCategory[] | undefined,
+					);
 					return state as unknown as ChangesState;
 				},
 				partialize: (state) => ({
@@ -166,9 +245,10 @@ export const useChangesStore = create<ChangesState>()(
 					viewMode: state.viewMode,
 					fileListViewMode: state.fileListViewMode,
 					expandedSections: state.expandedSections,
-					baseBranch: state.baseBranch,
+					sectionOrder: state.sectionOrder,
 					showRenderedMarkdown: state.showRenderedMarkdown,
 					hideUnchangedRegions: state.hideUnchangedRegions,
+					focusMode: state.focusMode,
 				}),
 			},
 		),

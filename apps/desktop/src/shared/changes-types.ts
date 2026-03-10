@@ -54,6 +54,11 @@ export interface GitChangesStatus {
 	hasUpstream: boolean; // Whether branch has an upstream tracking branch
 }
 
+/** Whether a file status represents a brand-new file (no previous version to diff against) */
+export function isNewFile(status: FileStatus): boolean {
+	return status === "added" || status === "untracked";
+}
+
 /** Whether a diff category supports editing (saving changes back to disk) */
 export function isDiffEditable(category: ChangeCategory): boolean {
 	return category === "staged" || category === "unstaged";
@@ -70,7 +75,7 @@ export interface FileDiffInput {
 	commitHash?: string; // For committed category: which commit to show
 }
 
-/** File contents for Monaco diff editor */
+/** File contents for diff viewer */
 export interface FileContents {
 	original: string; // Original content (before changes)
 	modified: string; // Modified content (after changes)

@@ -8,7 +8,12 @@ import type { ChangeCategory } from "./changes-types";
 /**
  * Pane types that can be displayed within a tab
  */
-export type PaneType = "terminal" | "webview" | "file-viewer" | "chat";
+export type PaneType =
+	| "terminal"
+	| "webview"
+	| "file-viewer"
+	| "chat-mastra"
+	| "devtools";
 
 /**
  * Pane status for agent lifecycle indicators
@@ -69,6 +74,20 @@ export function getHighestPriorityStatus(
 }
 
 /**
+ * Resolve what a pane's status should become when the user acknowledges it
+ * (e.g. clicking a tab, focusing a pane, selecting a workspace).
+ *
+ * - "review"     → "idle"    (user saw the completion)
+ * - "permission" → unchanged (persists until agent resumes)
+ * - "working"    → unchanged (persists until agent stops)
+ * - "idle"       → unchanged
+ */
+export function acknowledgedStatus(status: PaneStatus | undefined): PaneStatus {
+	if (status === "review") return "idle";
+	return status ?? "idle";
+}
+
+/**
  * File viewer display modes
  */
 export type FileViewerMode = "rendered" | "raw" | "diff";
@@ -82,7 +101,7 @@ export type DiffLayout = "inline" | "side-by-side";
  * File viewer pane-specific properties
  */
 export interface FileViewerState {
-	/** Worktree-relative file path */
+	/** Canonical absolute file path (or remote URL for attachments) */
 	filePath: string;
 	/** Display mode: rendered (markdown), raw (source), or diff */
 	viewMode: FileViewerMode;
@@ -94,12 +113,14 @@ export interface FileViewerState {
 	diffCategory?: ChangeCategory;
 	/** Commit hash for committed category diffs */
 	commitHash?: string;
-	/** Original path for renamed files */
+	/** Canonical absolute original path for renamed files */
 	oldPath?: string;
 	/** Initial line to scroll to (raw mode only, transient - applied once) */
 	initialLine?: number;
 	/** Initial column to scroll to (raw mode only, transient - applied once) */
 	initialColumn?: number;
+	/** Optional user-facing name override for remote URLs/attachments */
+	displayName?: string;
 }
 
 /**
@@ -110,23 +131,76 @@ export interface Pane {
 	tabId: string;
 	type: PaneType;
 	name: string;
+	userTitle?: string;
 	isNew?: boolean;
 	status?: PaneStatus;
-	initialCommands?: string[];
 	initialCwd?: string;
 	url?: string; // For webview panes
 	cwd?: string | null; // Current working directory
 	cwdConfirmed?: boolean; // True if cwd confirmed via OSC-7, false if seeded
 	fileViewer?: FileViewerState; // For file-viewer panes
-	chat?: ChatPaneState; // For chat panes
+	chatMastra?: ChatMastraPaneState; // For Mastra chat panes
+	browser?: BrowserPaneState; // For browser (webview) panes
+	devtools?: DevToolsPaneState; // For devtools panes
+}
+
+export interface ChatMastraLaunchConfig {
+	initialPrompt?: string;
+	draftInput?: string;
+	metadata?: {
+		model?: string;
+	};
+	retryCount?: number;
+}
+
+export interface ChatMastraPaneState {
+	sessionId: string | null;
+	launchConfig?: ChatMastraLaunchConfig | null;
 }
 
 /**
- * Chat pane-specific properties
+ * Single entry in the browser pane's navigation history
  */
-export interface ChatPaneState {
-	/** Session ID for the chat session */
-	sessionId: string;
+export interface BrowserHistoryEntry {
+	url: string;
+	title: string;
+	timestamp: number;
+	faviconUrl?: string;
+}
+
+/**
+ * Named viewport size preset for responsive testing
+ */
+export interface ViewportPreset {
+	name: string;
+	width: number;
+	height: number;
+}
+
+/**
+ * Browser pane-specific properties
+ */
+export interface BrowserLoadError {
+	code: number;
+	description: string;
+	url: string;
+}
+
+export interface BrowserPaneState {
+	currentUrl: string;
+	history: BrowserHistoryEntry[];
+	historyIndex: number;
+	isLoading: boolean;
+	error?: BrowserLoadError | null;
+	viewport?: ViewportPreset | null;
+}
+
+/**
+ * DevTools pane-specific properties
+ */
+export interface DevToolsPaneState {
+	/** The pane ID of the browser pane being inspected */
+	targetPaneId: string;
 }
 
 /**

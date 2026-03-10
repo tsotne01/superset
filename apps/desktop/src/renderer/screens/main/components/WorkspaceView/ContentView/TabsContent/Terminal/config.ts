@@ -13,7 +13,7 @@ export const DEBUG_TERMINAL =
 	localStorage.getItem("SUPERSET_TERMINAL_DEBUG") === "1";
 
 // Nerd Fonts first for shell theme compatibility (Oh My Posh, Powerlevel10k, etc.)
-const TERMINAL_FONT_FAMILY = [
+export const DEFAULT_TERMINAL_FONT_FAMILY = [
 	"MesloLGM Nerd Font",
 	"MesloLGM NF",
 	"MesloLGS NF",
@@ -31,18 +31,25 @@ const TERMINAL_FONT_FAMILY = [
 	"monospace",
 ].join(", ");
 
+export const DEFAULT_TERMINAL_FONT_SIZE = 14;
+
 export const TERMINAL_OPTIONS: ITerminalOptions = {
 	cursorBlink: true,
-	fontSize: 14,
-	fontFamily: TERMINAL_FONT_FAMILY,
+	fontSize: DEFAULT_TERMINAL_FONT_SIZE,
+	fontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
 	theme: TERMINAL_THEME,
 	allowProposedApi: true,
-	scrollback: 10000,
+	scrollback: 2000,
 	// Allow Option+key to type special characters on international keyboards (e.g., Option+2 = @)
 	macOptionIsMeta: false,
 	cursorStyle: "block",
 	cursorInactiveStyle: "outline",
 	screenReaderMode: false,
+	// xterm's fit addon permanently reserves scrollbar width from usable columns.
+	// Hide the built-in scrollbar so terminal content can use the full pane width.
+	scrollbar: {
+		showScrollbar: false,
+	},
 };
 
 export const RESIZE_DEBOUNCE_MS = 150;

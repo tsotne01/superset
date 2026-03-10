@@ -1,21 +1,25 @@
+import { resolve } from "node:path";
 import simpleGit from "simple-git";
 import { z } from "zod";
 import { publicProcedure, router } from "../..";
+import { deleteRegisteredWorktreePaths } from "../workspace-fs-service";
 import {
-	assertRegisteredWorktree,
 	gitCheckoutFile,
 	gitDiscardAllStaged,
 	gitDiscardAllUnstaged,
 	gitStageAll,
 	gitStageFile,
+	gitStageFiles,
 	gitStash,
 	gitStashIncludeUntracked,
 	gitStashPop,
 	gitUnstageAll,
 	gitUnstageFile,
-	secureFs,
-} from "./security";
+	gitUnstageFiles,
+} from "./security/git-commands";
+import { assertRegisteredWorktree } from "./security/path-validation";
 import { parseGitStatus } from "./utils/parse-status";
+import { clearStatusCacheForWorktree } from "./utils/status-cache";
 
 async function getUntrackedFilePaths(worktreePath: string): Promise<string[]> {
 	assertRegisteredWorktree(worktreePath);
@@ -38,7 +42,13 @@ async function deleteFiles(
 	filePaths: string[],
 ): Promise<void> {
 	await Promise.all(
-		filePaths.map((filePath) => secureFs.delete(worktreePath, filePath)),
+		filePaths.map(async (filePath) => {
+			await deleteRegisteredWorktreePaths({
+				worktreePath,
+				absolutePaths: [resolve(worktreePath, filePath)],
+				permanent: true,
+			});
+		}),
 	);
 }
 
@@ -53,6 +63,7 @@ export const createStagingRouter = () => {
 			)
 			.mutation(async ({ input }): Promise<{ success: boolean }> => {
 				await gitStageFile(input.worktreePath, input.filePath);
+				clearStatusCacheForWorktree(input.worktreePath);
 				return { success: true };
 			}),
 
@@ -65,6 +76,7 @@ export const createStagingRouter = () => {
 			)
 			.mutation(async ({ input }): Promise<{ success: boolean }> => {
 				await gitUnstageFile(input.worktreePath, input.filePath);
+				clearStatusCacheForWorktree(input.worktreePath);
 				return { success: true };
 			}),
 
@@ -77,6 +89,33 @@ export const createStagingRouter = () => {
 			)
 			.mutation(async ({ input }): Promise<{ success: boolean }> => {
 				await gitCheckoutFile(input.worktreePath, input.filePath);
+				clearStatusCacheForWorktree(input.worktreePath);
+				return { success: true };
+			}),
+
+		stageFiles: publicProcedure
+			.input(
+				z.object({
+					worktreePath: z.string(),
+					filePaths: z.array(z.string()).min(1),
+				}),
+			)
+			.mutation(async ({ input }): Promise<{ success: boolean }> => {
+				await gitStageFiles(input.worktreePath, input.filePaths);
+				clearStatusCacheForWorktree(input.worktreePath);
+				return { success: true };
+			}),
+
+		unstageFiles: publicProcedure
+			.input(
+				z.object({
+					worktreePath: z.string(),
+					filePaths: z.array(z.string()).min(1),
+				}),
+			)
+			.mutation(async ({ input }): Promise<{ success: boolean }> => {
+				await gitUnstageFiles(input.worktreePath, input.filePaths);
+				clearStatusCacheForWorktree(input.worktreePath);
 				return { success: true };
 			}),
 
@@ -84,6 +123,7 @@ export const createStagingRouter = () => {
 			.input(z.object({ worktreePath: z.string() }))
 			.mutation(async ({ input }): Promise<{ success: boolean }> => {
 				await gitStageAll(input.worktreePath);
+				clearStatusCacheForWorktree(input.worktreePath);
 				return { success: true };
 			}),
 
@@ -91,6 +131,7 @@ export const createStagingRouter = () => {
 			.input(z.object({ worktreePath: z.string() }))
 			.mutation(async ({ input }): Promise<{ success: boolean }> => {
 				await gitUnstageAll(input.worktreePath);
+				clearStatusCacheForWorktree(input.worktreePath);
 				return { success: true };
 			}),
 
@@ -102,7 +143,12 @@ export const createStagingRouter = () => {
 				}),
 			)
 			.mutation(async ({ input }): Promise<{ success: boolean }> => {
-				await secureFs.delete(input.worktreePath, input.filePath);
+				await deleteRegisteredWorktreePaths({
+					worktreePath: input.worktreePath,
+					absolutePaths: [resolve(input.worktreePath, input.filePath)],
+					permanent: true,
+				});
+				clearStatusCacheForWorktree(input.worktreePath);
 				return { success: true };
 			}),
 
@@ -113,6 +159,7 @@ export const createStagingRouter = () => {
 				const untrackedFiles = await getUntrackedFilePaths(input.worktreePath);
 				await gitDiscardAllUnstaged(input.worktreePath);
 				await deleteFiles(input.worktreePath, untrackedFiles);
+				clearStatusCacheForWorktree(input.worktreePath);
 				return { success: true };
 			}),
 
@@ -123,6 +170,7 @@ export const createStagingRouter = () => {
 				const stagedNewFiles = await getStagedNewFilePaths(input.worktreePath);
 				await gitDiscardAllStaged(input.worktreePath);
 				await deleteFiles(input.worktreePath, stagedNewFiles);
+				clearStatusCacheForWorktree(input.worktreePath);
 				return { success: true };
 			}),
 
@@ -130,6 +178,7 @@ export const createStagingRouter = () => {
 			.input(z.object({ worktreePath: z.string() }))
 			.mutation(async ({ input }): Promise<{ success: boolean }> => {
 				await gitStash(input.worktreePath);
+				clearStatusCacheForWorktree(input.worktreePath);
 				return { success: true };
 			}),
 
@@ -137,6 +186,7 @@ export const createStagingRouter = () => {
 			.input(z.object({ worktreePath: z.string() }))
 			.mutation(async ({ input }): Promise<{ success: boolean }> => {
 				await gitStashIncludeUntracked(input.worktreePath);
+				clearStatusCacheForWorktree(input.worktreePath);
 				return { success: true };
 			}),
 
@@ -144,6 +194,7 @@ export const createStagingRouter = () => {
 			.input(z.object({ worktreePath: z.string() }))
 			.mutation(async ({ input }): Promise<{ success: boolean }> => {
 				await gitStashPop(input.worktreePath);
+				clearStatusCacheForWorktree(input.worktreePath);
 				return { success: true };
 			}),
 	});

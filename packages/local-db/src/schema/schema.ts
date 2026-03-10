@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import type {
 	BranchPrefixMode,
 	ExternalApp,
+	FileOpenMode,
 	GitHubStatus,
 	GitStatus,
 	TerminalLinkBehavior,
@@ -34,10 +35,15 @@ export const projects = sqliteTable(
 			mode: "boolean",
 		}),
 		defaultBranch: text("default_branch"),
+		workspaceBaseBranch: text("workspace_base_branch"),
 		githubOwner: text("github_owner"),
 		branchPrefixMode: text("branch_prefix_mode").$type<BranchPrefixMode>(),
 		branchPrefixCustom: text("branch_prefix_custom"),
+		worktreeBaseDir: text("worktree_base_dir"),
 		hideImage: integer("hide_image", { mode: "boolean" }),
+		iconUrl: text("icon_url"),
+		neonProjectId: text("neon_project_id"),
+		defaultApp: text("default_app").$type<ExternalApp>(),
 	},
 	(table) => [
 		index("projects_main_repo_path_idx").on(table.mainRepoPath),
@@ -112,11 +118,18 @@ export const workspaces = sqliteTable(
 		// Timestamp when deletion was initiated. Non-null means deletion in progress.
 		// Workspaces with deletingAt set should be filtered out from queries.
 		deletingAt: integer("deleting_at"),
+		// Allocated port base for multi-worktree dev instances.
+		// Each workspace gets a range of 10 ports starting from this base.
+		portBase: integer("port_base"),
+		sectionId: text("section_id").references(() => workspaceSections.id, {
+			onDelete: "set null",
+		}),
 	},
 	(table) => [
 		index("workspaces_project_id_idx").on(table.projectId),
 		index("workspaces_worktree_id_idx").on(table.worktreeId),
 		index("workspaces_last_opened_at_idx").on(table.lastOpenedAt),
+		index("workspaces_section_id_idx").on(table.sectionId),
 		// NOTE: Migration 0006 creates an additional partial unique index:
 		// CREATE UNIQUE INDEX workspaces_unique_branch_per_project
 		//   ON workspaces(project_id) WHERE type = 'branch'
@@ -129,10 +142,35 @@ export const workspaces = sqliteTable(
 export type InsertWorkspace = typeof workspaces.$inferInsert;
 export type SelectWorkspace = typeof workspaces.$inferSelect;
 
+/**
+ * Workspace sections - user-created groups within a project for organizing workspaces
+ */
+export const workspaceSections = sqliteTable(
+	"workspace_sections",
+	{
+		id: text("id")
+			.primaryKey()
+			.$defaultFn(() => uuidv4()),
+		projectId: text("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		tabOrder: integer("tab_order").notNull(),
+		isCollapsed: integer("is_collapsed", { mode: "boolean" }).default(false),
+		color: text("color"),
+		createdAt: integer("created_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+	},
+	(table) => [index("workspace_sections_project_id_idx").on(table.projectId)],
+);
+
+export type InsertWorkspaceSection = typeof workspaceSections.$inferInsert;
+export type SelectWorkspaceSection = typeof workspaceSections.$inferSelect;
+
 export const settings = sqliteTable("settings", {
 	id: integer("id").primaryKey().default(1),
 	lastActiveWorkspaceId: text("last_active_workspace_id"),
-	lastUsedApp: text("last_used_app").$type<ExternalApp>(),
 	terminalPresets: text("terminal_presets", { mode: "json" }).$type<
 		TerminalPreset[]
 	>(),
@@ -157,6 +195,19 @@ export const settings = sqliteTable("settings", {
 		mode: "boolean",
 	}),
 	deleteLocalBranch: integer("delete_local_branch", { mode: "boolean" }),
+	fileOpenMode: text("file_open_mode").$type<FileOpenMode>(),
+	showPresetsBar: integer("show_presets_bar", { mode: "boolean" }),
+	useCompactTerminalAddButton: integer("use_compact_terminal_add_button", {
+		mode: "boolean",
+	}),
+	terminalFontFamily: text("terminal_font_family"),
+	terminalFontSize: integer("terminal_font_size"),
+	editorFontFamily: text("editor_font_family"),
+	editorFontSize: integer("editor_font_size"),
+	showResourceMonitor: integer("show_resource_monitor", { mode: "boolean" }),
+	worktreeBaseDir: text("worktree_base_dir"),
+	openLinksInApp: integer("open_links_in_app", { mode: "boolean" }),
+	defaultEditor: text("default_editor").$type<ExternalApp>(),
 });
 
 export type InsertSettings = typeof settings.$inferInsert;
@@ -296,3 +347,29 @@ export const tasks = sqliteTable(
 
 export type InsertTask = typeof tasks.$inferInsert;
 export type SelectTask = typeof tasks.$inferSelect;
+
+/**
+ * Browser history table - persists browsing history for URL autocomplete
+ */
+export const browserHistory = sqliteTable(
+	"browser_history",
+	{
+		id: text("id")
+			.primaryKey()
+			.$defaultFn(() => uuidv4()),
+		url: text("url").notNull().unique(),
+		title: text("title").notNull().default(""),
+		faviconUrl: text("favicon_url"),
+		lastVisitedAt: integer("last_visited_at")
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		visitCount: integer("visit_count").notNull().default(1),
+	},
+	(table) => [
+		index("browser_history_url_idx").on(table.url),
+		index("browser_history_last_visited_at_idx").on(table.lastVisitedAt),
+	],
+);
+
+export type InsertBrowserHistory = typeof browserHistory.$inferInsert;
+export type SelectBrowserHistory = typeof browserHistory.$inferSelect;

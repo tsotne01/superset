@@ -1,8 +1,6 @@
 import { Button } from "@superset/ui/button";
-import { Skeleton } from "@superset/ui/skeleton";
 import { toast } from "@superset/ui/sonner";
 import { useLiveQuery } from "@tanstack/react-db";
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { HiArrowRight } from "react-icons/hi2";
@@ -16,6 +14,7 @@ import {
 } from "../../../utils/settings-search";
 import type { PlanTier } from "../../constants";
 import { CurrentPlanCard } from "./components/CurrentPlanCard";
+import { RecentInvoices } from "./components/RecentInvoices";
 import { UpgradeCard } from "./components/UpgradeCard";
 
 interface BillingOverviewProps {
@@ -23,7 +22,7 @@ interface BillingOverviewProps {
 }
 
 export function BillingOverview({ visibleItems }: BillingOverviewProps) {
-	const { data: session, isPending } = authClient.useSession();
+	const { data: session } = authClient.useSession();
 	const collections = useCollections();
 	const [isUpgrading, setIsUpgrading] = useState(false);
 	const [isCanceling, setIsCanceling] = useState(false);
@@ -31,28 +30,20 @@ export function BillingOverview({ visibleItems }: BillingOverviewProps) {
 
 	const activeOrgId = session?.session?.activeOrganizationId;
 
-	// Get subscription details - this is the source of truth for plan status
-	const {
-		data: subscriptionData,
-		refetch: refetchSubscription,
-		isPending: isSubscriptionPending,
-	} = useQuery({
-		queryKey: ["subscription", activeOrgId],
-		queryFn: async () => {
-			if (!activeOrgId) return null;
-			const result = await authClient.subscription.list({
-				query: { referenceId: activeOrgId },
-			});
-			return result.data?.find((s) => s.status === "active");
-		},
-		enabled: !!activeOrgId,
-	});
+	// Get subscription from Electric (preloaded, instant)
+	const { data: subscriptionsData } = useLiveQuery(
+		(q) => q.from({ subscriptions: collections.subscriptions }),
+		[collections],
+	);
+	const subscriptionData = subscriptionsData?.find(
+		(s) => s.status === "active",
+	);
 
 	// Derive plan from subscription data (not session, which can be stale)
 	const plan: PlanTier = (subscriptionData?.plan as PlanTier) ?? "free";
 
 	// Get member count from Electric
-	const { data: membersData, isLoading: isMembersLoading } = useLiveQuery(
+	const { data: membersData } = useLiveQuery(
 		(q) =>
 			q
 				.from({ members: collections.members })
@@ -112,7 +103,6 @@ export function BillingOverview({ visibleItems }: BillingOverviewProps) {
 					},
 				},
 			);
-			await refetchSubscription();
 		} finally {
 			setIsCanceling(false);
 		}
@@ -126,7 +116,6 @@ export function BillingOverview({ visibleItems }: BillingOverviewProps) {
 			await authClient.subscription.restore({
 				referenceId: activeOrgId,
 			});
-			await refetchSubscription();
 			toast.success("Plan restored");
 		} finally {
 			setIsRestoring(false);
@@ -159,28 +148,26 @@ export function BillingOverview({ visibleItems }: BillingOverviewProps) {
 			</div>
 
 			<div className="space-y-3">
-				{showOverview &&
-					(isPending || isSubscriptionPending || isMembersLoading ? (
-						<Skeleton className="h-20 w-full rounded-lg" />
-					) : (
-						<>
-							<CurrentPlanCard
-								currentPlan={plan}
-								onCancel={handleCancel}
-								isCanceling={isCanceling}
-								onRestore={handleRestore}
-								isRestoring={isRestoring}
-								cancelAt={subscriptionData?.cancelAt}
-								periodEnd={subscriptionData?.periodEnd}
+				{showOverview && (
+					<>
+						<CurrentPlanCard
+							currentPlan={plan}
+							onCancel={handleCancel}
+							isCanceling={isCanceling}
+							onRestore={handleRestore}
+							isRestoring={isRestoring}
+							cancelAt={subscriptionData?.cancelAt}
+							periodEnd={subscriptionData?.periodEnd}
+						/>
+						{plan === "free" && (
+							<UpgradeCard
+								onUpgrade={() => handleUpgrade(false)}
+								isUpgrading={isUpgrading || memberCount === undefined}
 							/>
-							{plan === "free" && (
-								<UpgradeCard
-									onUpgrade={() => handleUpgrade(false)}
-									isUpgrading={isUpgrading || memberCount === undefined}
-								/>
-							)}
-						</>
-					))}
+						)}
+					</>
+				)}
+				<RecentInvoices />
 			</div>
 		</div>
 	);

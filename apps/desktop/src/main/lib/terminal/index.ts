@@ -1,6 +1,7 @@
 import { getTerminalHostClient } from "main/lib/terminal-host/client";
 import type { ListSessionsResponse } from "main/lib/terminal-host/types";
 import { DaemonTerminalManager, getDaemonTerminalManager } from "./daemon";
+import { prewarmTerminalEnv } from "./env";
 
 export { DaemonTerminalManager, getDaemonTerminalManager };
 export type {
@@ -12,6 +13,7 @@ export type {
 } from "./types";
 
 const DEBUG_TERMINAL = process.env.SUPERSET_TERMINAL_DEBUG === "1";
+let prewarmInFlight: Promise<void> | null = null;
 
 /**
  * Reconcile daemon sessions on app startup.
@@ -28,6 +30,40 @@ export async function reconcileDaemonSessions(): Promise<void> {
 			error,
 		);
 	}
+}
+
+/**
+ * Restart the terminal daemon. Kills all sessions, shuts down the daemon,
+ * and resets the manager so a fresh daemon spawns on next use.
+ */
+export async function restartDaemon(): Promise<{ success: boolean }> {
+	console.log("[restartDaemon] Starting daemon restart...");
+
+	try {
+		const client = getTerminalHostClient();
+		const connected = await client.tryConnectAndAuthenticate();
+
+		if (connected) {
+			const { sessions } = await client.listSessions();
+			const aliveCount = sessions.filter((s) => s.isAlive).length;
+			console.log(
+				`[restartDaemon] Shutting down daemon with ${aliveCount} alive sessions`,
+			);
+
+			await client.shutdownIfRunning({ killSessions: true });
+		} else {
+			console.log("[restartDaemon] Daemon was not running");
+		}
+	} catch (error) {
+		console.warn("[restartDaemon] Error during shutdown (continuing):", error);
+	}
+
+	const manager = getDaemonTerminalManager();
+	manager.reset();
+
+	console.log("[restartDaemon] Complete");
+
+	return { success: true };
 }
 
 export async function tryListExistingDaemonSessions(): Promise<{
@@ -50,4 +86,40 @@ export async function tryListExistingDaemonSessions(): Promise<{
 		}
 		return { sessions: [] };
 	}
+}
+
+/**
+ * Best-effort terminal runtime warmup.
+ * Runs in the background to reduce latency for the first user-opened terminal:
+ * - precomputes locale/env fallback
+ * - ensures daemon control/stream channels are established
+ */
+export function prewarmTerminalRuntime(): void {
+	if (prewarmInFlight) return;
+
+	prewarmInFlight = (async () => {
+		try {
+			prewarmTerminalEnv();
+		} catch (error) {
+			if (DEBUG_TERMINAL) {
+				console.warn(
+					"[TerminalManager] Failed to prewarm terminal env:",
+					error,
+				);
+			}
+		}
+
+		try {
+			await getTerminalHostClient().ensureConnected();
+		} catch (error) {
+			if (DEBUG_TERMINAL) {
+				console.warn(
+					"[TerminalManager] Failed to prewarm terminal daemon connection:",
+					error,
+				);
+			}
+		}
+	})().finally(() => {
+		prewarmInFlight = null;
+	});
 }

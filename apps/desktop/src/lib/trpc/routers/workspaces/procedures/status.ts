@@ -1,5 +1,5 @@
-import { workspaces } from "@superset/local-db";
-import { and, eq, isNull } from "drizzle-orm";
+import { workspaceSections, workspaces, worktrees } from "@superset/local-db";
+import { and, eq, isNull, not } from "drizzle-orm";
 import { localDb } from "main/lib/local-db";
 import { z } from "zod";
 import { publicProcedure, router } from "../../..";
@@ -8,6 +8,10 @@ import {
 	setLastActiveWorkspace,
 	touchWorkspace,
 } from "../utils/db-helpers";
+import {
+	getProjectChildItems,
+	reorderProjectChildItems,
+} from "../utils/project-children-order";
 
 export const createStatusProcedures = () => {
 	return router({
@@ -51,6 +55,61 @@ export const createStatusProcedures = () => {
 						.update(workspaces)
 						.set({ tabOrder: i })
 						.where(eq(workspaces.id, projectWorkspaces[i].id))
+						.run();
+				}
+
+				return { success: true };
+			}),
+
+		reorderProjectChildren: publicProcedure
+			.input(
+				z.object({
+					projectId: z.string(),
+					fromIndex: z.number(),
+					toIndex: z.number(),
+				}),
+			)
+			.mutation(({ input }) => {
+				const { projectId, fromIndex, toIndex } = input;
+
+				const projectWorkspaces = localDb
+					.select()
+					.from(workspaces)
+					.where(
+						and(
+							eq(workspaces.projectId, projectId),
+							isNull(workspaces.deletingAt),
+						),
+					)
+					.all();
+				const projectSections = localDb
+					.select()
+					.from(workspaceSections)
+					.where(eq(workspaceSections.projectId, projectId))
+					.all();
+
+				const items = getProjectChildItems(
+					projectId,
+					projectWorkspaces,
+					projectSections,
+				);
+
+				reorderProjectChildItems(items, fromIndex, toIndex);
+
+				for (const item of items) {
+					if (item.kind === "workspace") {
+						localDb
+							.update(workspaces)
+							.set({ tabOrder: item.tabOrder })
+							.where(eq(workspaces.id, item.id))
+							.run();
+						continue;
+					}
+
+					localDb
+						.update(workspaceSections)
+						.set({ tabOrder: item.tabOrder })
+						.where(eq(workspaceSections.id, item.id))
 						.run();
 				}
 
@@ -128,6 +187,51 @@ export const createStatusProcedures = () => {
 				setLastActiveWorkspace(input.workspaceId);
 
 				return { success: true, workspaceId: input.workspaceId };
+			}),
+
+		syncBranch: publicProcedure
+			.input(
+				z.object({
+					workspaceId: z.string(),
+					branch: z.string(),
+				}),
+			)
+			.mutation(({ input }) => {
+				const { workspaceId, branch } = input;
+
+				if (!branch || branch === "HEAD") {
+					return { success: false as const, reason: "invalid-branch" as const };
+				}
+
+				const workspace = getWorkspaceNotDeleting(workspaceId);
+				if (!workspace) {
+					return { success: false as const, reason: "not-found" as const };
+				}
+
+				if (workspace.branch === branch) {
+					return { success: true as const, changed: false as const };
+				}
+
+				localDb
+					.update(workspaces)
+					.set({ branch })
+					.where(eq(workspaces.id, workspaceId))
+					.run();
+
+				if (workspace.worktreeId) {
+					localDb
+						.update(worktrees)
+						.set({ branch })
+						.where(
+							and(
+								eq(worktrees.id, workspace.worktreeId),
+								not(eq(worktrees.branch, branch)),
+							),
+						)
+						.run();
+				}
+
+				return { success: true as const, changed: true as const };
 			}),
 	});
 };

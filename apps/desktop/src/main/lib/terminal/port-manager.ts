@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { DetectedPort } from "shared/types";
-import { treeKillWithEscalation } from "../tree-kill-with-escalation";
+import { treeKillWithEscalation } from "../tree-kill";
 import {
 	getListeningPortsForPids,
 	getProcessTree,
@@ -221,27 +221,35 @@ class PortManager extends EventEmitter {
 	}
 
 	private async collectRegularSessionPids(scanState: ScanState): Promise<void> {
+		const tasks: Promise<void>[] = [];
 		for (const [paneId, { session, workspaceId }] of this.sessions) {
 			if (!session.isAlive) continue;
-			await this.collectPidTree({
-				paneId,
-				workspaceId,
-				pid: session.pty.pid,
-				scanState,
-			});
+			tasks.push(
+				this.collectPidTree({
+					paneId,
+					workspaceId,
+					pid: session.pty.pid,
+					scanState,
+				}),
+			);
 		}
+		await Promise.all(tasks);
 	}
 
 	private async collectDaemonSessionPids(scanState: ScanState): Promise<void> {
+		const tasks: Promise<void>[] = [];
 		for (const [paneId, { workspaceId, pid }] of this.daemonSessions) {
 			if (pid === null) continue;
-			await this.collectPidTree({
-				paneId,
-				workspaceId,
-				pid,
-				scanState,
-			});
+			tasks.push(
+				this.collectPidTree({
+					paneId,
+					workspaceId,
+					pid,
+					scanState,
+				}),
+			);
 		}
+		await Promise.all(tasks);
 	}
 
 	private async collectPidTree({

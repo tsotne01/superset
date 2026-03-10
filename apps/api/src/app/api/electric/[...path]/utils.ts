@@ -1,15 +1,20 @@
 import { db } from "@superset/db/client";
 import {
 	agentCommands,
-	apikeys,
+	chatSessions,
 	devicePresence,
+	githubPullRequests,
+	githubRepositories,
 	integrationConnections,
 	invitations,
 	members,
 	organizations,
-	repositories,
+	projects,
+	sessionHosts,
+	subscriptions,
 	taskStatuses,
 	tasks,
+	workspaces,
 } from "@superset/db/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
@@ -18,7 +23,7 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 export type AllowedTable =
 	| "tasks"
 	| "task_statuses"
-	| "repositories"
+	| "projects"
 	| "auth.members"
 	| "auth.organizations"
 	| "auth.users"
@@ -26,7 +31,13 @@ export type AllowedTable =
 	| "auth.apikeys"
 	| "device_presence"
 	| "agent_commands"
-	| "integration_connections";
+	| "integration_connections"
+	| "subscriptions"
+	| "workspaces"
+	| "chat_sessions"
+	| "session_hosts"
+	| "github_repositories"
+	| "github_pull_requests";
 
 interface WhereClause {
 	fragment: string;
@@ -57,8 +68,8 @@ export async function buildWhereClause(
 		case "task_statuses":
 			return build(taskStatuses, taskStatuses.organizationId, organizationId);
 
-		case "repositories":
-			return build(repositories, repositories.organizationId, organizationId);
+		case "projects":
+			return build(projects, projects.organizationId, organizationId);
 
 		case "auth.members":
 			return build(members, members.organizationId, organizationId);
@@ -107,13 +118,41 @@ export async function buildWhereClause(
 		case "agent_commands":
 			return build(agentCommands, agentCommands.organizationId, organizationId);
 
-		case "auth.apikeys":
-			return build(apikeys, apikeys.userId, userId);
+		case "auth.apikeys": {
+			const fragment = `"metadata" LIKE '%"organizationId":"' || $1 || '"%'`;
+			return { fragment, params: [organizationId] };
+		}
 
 		case "integration_connections":
 			return build(
 				integrationConnections,
 				integrationConnections.organizationId,
+				organizationId,
+			);
+
+		case "subscriptions":
+			return build(subscriptions, subscriptions.referenceId, organizationId);
+
+		case "workspaces":
+			return build(workspaces, workspaces.organizationId, organizationId);
+
+		case "chat_sessions":
+			return build(chatSessions, chatSessions.organizationId, organizationId);
+
+		case "session_hosts":
+			return build(sessionHosts, sessionHosts.organizationId, organizationId);
+
+		case "github_repositories":
+			return build(
+				githubRepositories,
+				githubRepositories.organizationId,
+				organizationId,
+			);
+
+		case "github_pull_requests":
+			return build(
+				githubPullRequests,
+				githubPullRequests.organizationId,
 				organizationId,
 			);
 

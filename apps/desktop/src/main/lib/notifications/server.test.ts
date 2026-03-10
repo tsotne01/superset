@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mapEventType } from "./server";
+import { mapEventType } from "./map-event-type";
 
 describe("notifications/server", () => {
 	describe("mapEventType", () => {
@@ -19,8 +19,32 @@ describe("notifications/server", () => {
 			expect(mapEventType("agent-turn-complete")).toBe("Stop");
 		});
 
+		it("should map 'PostToolUse' to 'Start'", () => {
+			expect(mapEventType("PostToolUse")).toBe("Start");
+		});
+
+		it("should map 'PostToolUseFailure' to 'Start'", () => {
+			expect(mapEventType("PostToolUseFailure")).toBe("Start");
+		});
+
+		it("should map Gemini 'BeforeAgent' to 'Start'", () => {
+			expect(mapEventType("BeforeAgent")).toBe("Start");
+		});
+
+		it("should map Gemini 'AfterAgent' to 'Stop'", () => {
+			expect(mapEventType("AfterAgent")).toBe("Stop");
+		});
+
+		it("should map Gemini 'AfterTool' to 'Start'", () => {
+			expect(mapEventType("AfterTool")).toBe("Start");
+		});
+
 		it("should map 'PermissionRequest' to 'PermissionRequest'", () => {
 			expect(mapEventType("PermissionRequest")).toBe("PermissionRequest");
+		});
+
+		it("should map Factory Droid 'Notification' to 'PermissionRequest'", () => {
+			expect(mapEventType("Notification")).toBe("PermissionRequest");
 		});
 
 		it("should return null for unknown event types (forward compatibility)", () => {
@@ -30,7 +54,6 @@ describe("notifications/server", () => {
 		});
 
 		it("should return null for undefined eventType (not default to Stop)", () => {
-			// This is critical: missing eventType should NOT trigger a completion notification
 			expect(mapEventType(undefined)).toBeNull();
 		});
 

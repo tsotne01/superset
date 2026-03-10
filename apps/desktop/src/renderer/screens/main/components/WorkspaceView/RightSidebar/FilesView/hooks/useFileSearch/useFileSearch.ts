@@ -1,31 +1,38 @@
+import { useDebouncedValue } from "renderer/hooks/useDebouncedValue";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { SEARCH_RESULT_LIMIT } from "../../constants";
 
 interface UseFileSearchParams {
-	worktreePath: string | undefined;
+	workspaceId: string | undefined;
 	searchTerm: string;
-	includeHidden: boolean;
+	includePattern?: string;
+	excludePattern?: string;
 	limit?: number;
 }
 
 export function useFileSearch({
-	worktreePath,
+	workspaceId,
 	searchTerm,
-	includeHidden,
+	includePattern = "",
+	excludePattern = "",
 	limit = SEARCH_RESULT_LIMIT,
 }: UseFileSearchParams) {
 	const trimmedQuery = searchTerm.trim();
+	const debouncedQuery = useDebouncedValue(trimmedQuery, 150);
+	const isDebouncing =
+		trimmedQuery.length > 0 && trimmedQuery !== debouncedQuery;
 
 	const { data: searchResults, isFetching } =
 		electronTrpc.filesystem.searchFiles.useQuery(
 			{
-				rootPath: worktreePath ?? "",
-				query: trimmedQuery,
-				includeHidden,
+				workspaceId: workspaceId ?? "",
+				query: debouncedQuery,
+				includePattern,
+				excludePattern,
 				limit,
 			},
 			{
-				enabled: Boolean(worktreePath) && trimmedQuery.length > 0,
+				enabled: Boolean(workspaceId) && debouncedQuery.length > 0,
 				staleTime: 1000,
 				placeholderData: (previous) => previous ?? [],
 			},
@@ -33,7 +40,7 @@ export function useFileSearch({
 
 	return {
 		searchResults: searchResults ?? [],
-		isFetching,
+		isFetching: isFetching || isDebouncing,
 		hasQuery: trimmedQuery.length > 0,
 	};
 }

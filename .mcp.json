@@ -6,7 +6,8 @@
 		},
 		"expo-mcp": {
 			"type": "http",
-			"url": "https://mcp.expo.dev/mcp"
+			"url": "https://mcp.expo.dev/mcp",
+			"enabled": false
 		},
 		"maestro": {
 			"command": "maestro",
@@ -24,18 +25,9 @@
 			"type": "http",
 			"url": "https://mcp.sentry.dev/mcp"
 		},
-		"posthog": {
-			"command": "npx",
-			"args": [
-				"-y",
-				"mcp-remote@latest",
-				"https://mcp.posthog.com/mcp",
-				"--header",
-				"Authorization:${POSTHOG_AUTH_HEADER}"
-			],
-			"env": {
-				"POSTHOG_AUTH_HEADER": "Bearer ${POSTHOG_API_KEY}"
-			}
+		"desktop-automation": {
+			"command": "bun",
+			"args": ["run", "packages/desktop-mcp/src/bin.ts"]
 		}
 	}
 }
