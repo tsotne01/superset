@@ -1,20 +1,16 @@
 import { eq, useLiveQuery } from "@tanstack/react-db";
-import {
-	createFileRoute,
-	Outlet,
-	useMatchRoute,
-} from "@tanstack/react-router";
+import { createFileRoute, Outlet, useMatchRoute } from "@tanstack/react-router";
 import { env } from "renderer/env.renderer";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { useHostService } from "renderer/routes/_authenticated/providers/HostServiceProvider";
 import { WorkspaceTrpcProvider } from "./providers/WorkspaceTrpcProvider";
 
-export const Route = createFileRoute(
-	"/_authenticated/_dashboard/v2-workspace",
-)({
-	component: V2WorkspaceLayout,
-});
+export const Route = createFileRoute("/_authenticated/_dashboard/v2-workspace")(
+	{
+		component: V2WorkspaceLayout,
+	},
+);
 
 function getExternalWorkspaceHostUrl(workspaceId: string): string {
 	// Placeholder until external-device host calls are proxied through the API.
@@ -51,7 +47,7 @@ function V2WorkspaceLayout() {
 	const hostUrl = workspace
 		? isExternalWorkspace
 			? getExternalWorkspaceHostUrl(workspace.id)
-			: localHostService?.url ?? null
+			: (localHostService?.url ?? null)
 		: null;
 
 	if (!workspaceId || !workspace) {
