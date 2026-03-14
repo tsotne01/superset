@@ -497,7 +497,7 @@ function PromptGroupInner({
 			firstIssueSlug ||
 			(linkedPR ? `pr-${linkedPR.prNumber}` : "") ||
 			"",
-		20,
+		18,
 	);
 
 	const previousProjectIdRef = useRef(projectId);
