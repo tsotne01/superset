@@ -59,28 +59,6 @@ function getSelectedLabel(
 	);
 }
 
-function getSelectedDescription(
-	hostTarget: WorkspaceHostTarget,
-	otherDevices: WorkspaceHostDeviceOption[],
-) {
-	if (hostTarget.kind === "local") {
-		return "Create on this device";
-	}
-
-	if (hostTarget.kind === "cloud") {
-		return "Create through the cloud workspace host";
-	}
-
-	const selectedDevice = otherDevices.find(
-		(device) => device.id === hostTarget.deviceId,
-	);
-	if (!selectedDevice) {
-		return "Create on another device";
-	}
-
-	return `${selectedDevice.isOnline ? "Online" : "Offline"} ${selectedDevice.type}`;
-}
-
 function getSelectedIcon(hostTarget: WorkspaceHostTarget) {
 	if (hostTarget.kind === "local") {
 		return <HiOutlineComputerDesktop className="size-4 shrink-0" />;
@@ -103,93 +81,87 @@ export function DevicePicker({
 		currentDeviceName,
 		otherDevices,
 	);
-	const selectedDescription = getSelectedDescription(hostTarget, otherDevices);
 
 	return (
-		<div className="space-y-1">
-			<DropdownMenu>
-				<DropdownMenuTrigger asChild>
-					<Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs">
-						<span className="flex min-w-0 items-center gap-1.5">
-							{getSelectedIcon(hostTarget)}
-							<span className="max-w-[140px] truncate">{selectedLabel}</span>
-						</span>
-						<HiChevronUpDown className="size-3 shrink-0" />
-					</Button>
-				</DropdownMenuTrigger>
-				<DropdownMenuContent align="end" className="w-72">
-					<DropdownMenuItem
-						onSelect={() => onSelectHostTarget({ kind: "local" })}
-					>
-						<HiOutlineComputerDesktop className="size-4" />
-						<span className="flex-1">Local Device</span>
-						{hostTarget.kind === "local" && <HiCheck className="size-4" />}
-					</DropdownMenuItem>
-					<DropdownMenuItem
-						onSelect={() => onSelectHostTarget({ kind: "cloud" })}
-					>
-						<HiOutlineCloud className="size-4" />
-						<span className="flex-1">Cloud Workspace</span>
-						{hostTarget.kind === "cloud" && <HiCheck className="size-4" />}
-					</DropdownMenuItem>
-					<DropdownMenuSeparator />
-					<DropdownMenuSub>
-						<DropdownMenuSubTrigger>
-							<HiOutlineServer className="size-4" />
-							Other Devices
-						</DropdownMenuSubTrigger>
-						<DropdownMenuSubContent className="w-72">
-							{otherDevices.length === 0 ? (
-								<DropdownMenuItem disabled>No devices found</DropdownMenuItem>
-							) : (
-								otherDevices.map((device) => {
-									const DeviceIcon = getDeviceIcon(device.type);
-									const isSelected =
-										hostTarget.kind === "device" &&
-										hostTarget.deviceId === device.id;
+		<DropdownMenu>
+			<DropdownMenuTrigger asChild>
+				<Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs">
+					<span className="flex min-w-0 items-center gap-1.5">
+						{getSelectedIcon(hostTarget)}
+						<span className="max-w-[140px] truncate">{selectedLabel}</span>
+					</span>
+					<HiChevronUpDown className="size-3 shrink-0" />
+				</Button>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="end" className="w-72">
+				<DropdownMenuItem
+					onSelect={() => onSelectHostTarget({ kind: "local" })}
+				>
+					<HiOutlineComputerDesktop className="size-4" />
+					<span className="flex-1">Local Device</span>
+					{hostTarget.kind === "local" && <HiCheck className="size-4" />}
+				</DropdownMenuItem>
+				<DropdownMenuItem
+					onSelect={() => onSelectHostTarget({ kind: "cloud" })}
+				>
+					<HiOutlineCloud className="size-4" />
+					<span className="flex-1">Cloud Workspace</span>
+					{hostTarget.kind === "cloud" && <HiCheck className="size-4" />}
+				</DropdownMenuItem>
+				<DropdownMenuSeparator />
+				<DropdownMenuSub>
+					<DropdownMenuSubTrigger>
+						<HiOutlineServer className="size-4" />
+						Other Devices
+					</DropdownMenuSubTrigger>
+					<DropdownMenuSubContent className="w-72">
+						{otherDevices.length === 0 ? (
+							<DropdownMenuItem disabled>No devices found</DropdownMenuItem>
+						) : (
+							otherDevices.map((device) => {
+								const DeviceIcon = getDeviceIcon(device.type);
+								const isSelected =
+									hostTarget.kind === "device" &&
+									hostTarget.deviceId === device.id;
 
-									return (
-										<DropdownMenuItem
-											key={device.id}
-											onSelect={() =>
-												onSelectHostTarget({
-													kind: "device",
-													deviceId: device.id,
-												})
-											}
-										>
-											<DeviceIcon className="size-4" />
-											<div className="min-w-0 flex-1">
-												<div className="truncate">{device.name}</div>
-												<div className="text-xs text-muted-foreground">
-													{device.type}
-												</div>
+								return (
+									<DropdownMenuItem
+										key={device.id}
+										onSelect={() =>
+											onSelectHostTarget({
+												kind: "device",
+												deviceId: device.id,
+											})
+										}
+									>
+										<DeviceIcon className="size-4" />
+										<div className="min-w-0 flex-1">
+											<div className="truncate">{device.name}</div>
+											<div className="text-xs text-muted-foreground">
+												{device.type}
 											</div>
-											<div className="flex items-center gap-2">
-												<span
-													className={cn(
-														"size-2 rounded-full",
-														device.isOnline
-															? "bg-emerald-500"
-															: "bg-muted-foreground/40",
-													)}
-												/>
-												<span className="text-xs text-muted-foreground">
-													{device.isOnline ? "Online" : "Offline"}
-												</span>
-												{isSelected && <HiCheck className="size-4" />}
-											</div>
-										</DropdownMenuItem>
-									);
-								})
-							)}
-						</DropdownMenuSubContent>
-					</DropdownMenuSub>
-				</DropdownMenuContent>
-			</DropdownMenu>
-			<p className="px-2 text-[11px] text-muted-foreground">
-				{selectedDescription}
-			</p>
-		</div>
+										</div>
+										<div className="flex items-center gap-2">
+											<span
+												className={cn(
+													"size-2 rounded-full",
+													device.isOnline
+														? "bg-emerald-500"
+														: "bg-muted-foreground/40",
+												)}
+											/>
+											<span className="text-xs text-muted-foreground">
+												{device.isOnline ? "Online" : "Offline"}
+											</span>
+											{isSelected && <HiCheck className="size-4" />}
+										</div>
+									</DropdownMenuItem>
+								);
+							})
+						)}
+					</DropdownMenuSubContent>
+				</DropdownMenuSub>
+			</DropdownMenuContent>
+		</DropdownMenu>
 	);
 }
