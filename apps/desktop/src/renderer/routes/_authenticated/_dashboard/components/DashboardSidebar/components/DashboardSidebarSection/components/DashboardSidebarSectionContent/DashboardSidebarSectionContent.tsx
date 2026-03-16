@@ -30,6 +30,7 @@ export function DashboardSidebarSectionContent({
 					<div className="pb-1">
 						{section.workspaces.map((workspace, index) => (
 							<DashboardSidebarWorkspaceItem
+								accentColor={section.color}
 								key={workspace.id}
 								id={workspace.id}
 								projectId={projectId}

@@ -1,0 +1,53 @@
+import { cn } from "@superset/ui/utils";
+import { LuFolderGit2 } from "react-icons/lu";
+import { AsciiSpinner } from "renderer/screens/main/components/AsciiSpinner";
+import { StatusIndicator } from "renderer/screens/main/components/StatusIndicator";
+import type { ActivePaneStatus } from "shared/tabs-types";
+
+interface DashboardSidebarWorkspaceIconProps {
+	isActive: boolean;
+	isUnread?: boolean;
+	variant: "collapsed" | "expanded";
+	workspaceStatus?: ActivePaneStatus | null;
+}
+
+const OVERLAY_POSITION = {
+	collapsed: "top-1 right-1",
+	expanded: "-top-0.5 -right-0.5",
+} as const;
+
+export function DashboardSidebarWorkspaceIcon({
+	isActive,
+	isUnread = false,
+	variant,
+	workspaceStatus = null,
+}: DashboardSidebarWorkspaceIconProps) {
+	const overlayPosition = OVERLAY_POSITION[variant];
+
+	return (
+		<>
+			{workspaceStatus === "working" ? (
+				<AsciiSpinner className="text-base" />
+			) : (
+				<LuFolderGit2
+					className={cn(
+						"size-4 transition-colors",
+						variant === "expanded" && "transition-colors",
+						isActive ? "text-foreground" : "text-muted-foreground",
+					)}
+					strokeWidth={1.75}
+				/>
+			)}
+			{workspaceStatus && workspaceStatus !== "working" && (
+				<span className={cn("absolute", overlayPosition)}>
+					<StatusIndicator status={workspaceStatus} />
+				</span>
+			)}
+			{isUnread && !workspaceStatus && (
+				<span className={cn("absolute flex size-2", overlayPosition)}>
+					<span className="relative inline-flex size-2 rounded-full bg-blue-500" />
+				</span>
+			)}
+		</>
+	);
+}

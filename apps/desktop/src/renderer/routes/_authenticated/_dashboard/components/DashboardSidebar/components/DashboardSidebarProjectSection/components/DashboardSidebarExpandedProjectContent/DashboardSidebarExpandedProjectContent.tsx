@@ -32,46 +32,45 @@ export function DashboardSidebarExpandedProjectContent({
 	onToggleSectionCollapse,
 }: DashboardSidebarExpandedProjectContentProps) {
 	return (
-		<>
-			<AnimatePresence initial={false}>
-				{!isCollapsed && (
-					<motion.div
-						initial={{ height: 0, opacity: 0 }}
-						animate={{ height: "auto", opacity: 1 }}
-						exit={{ height: 0, opacity: 0 }}
-						transition={{ duration: 0.15, ease: "easeOut" }}
-						className="overflow-hidden"
-					>
-						<div className="pb-1">
-							{workspaces.map((workspace, index) => (
-								<DashboardSidebarWorkspaceItem
-									key={workspace.id}
-									id={workspace.id}
-									projectId={projectId}
-									name={workspace.name}
-									branch={workspace.branch}
-									index={index}
-									workspaceIds={topLevelWorkspaceIds}
-									sections={allSections}
-									shortcutLabel={workspaceShortcutLabels.get(workspace.id)}
-								/>
-							))}
-							{sections.map((section) => (
-								<DashboardSidebarSectionComponent
-									key={section.id}
-									projectId={projectId}
-									section={section}
-									allSections={allSections}
-									workspaceShortcutLabels={workspaceShortcutLabels}
-									onDelete={onDeleteSection}
-									onRename={onRenameSection}
-									onToggleCollapse={onToggleSectionCollapse}
-								/>
-							))}
-						</div>
-					</motion.div>
-				)}
-			</AnimatePresence>
-		</>
+		<AnimatePresence initial={false}>
+			{!isCollapsed && (
+				<motion.div
+					initial={{ height: 0, opacity: 0 }}
+					animate={{ height: "auto", opacity: 1 }}
+					exit={{ height: 0, opacity: 0 }}
+					transition={{ duration: 0.15, ease: "easeOut" }}
+					className="overflow-hidden"
+				>
+					<div className="pb-1">
+						{workspaces.map((workspace, index) => (
+							<DashboardSidebarWorkspaceItem
+								key={workspace.id}
+								id={workspace.id}
+								projectId={projectId}
+								accentColor={null}
+								name={workspace.name}
+								branch={workspace.branch}
+								index={index}
+								workspaceIds={topLevelWorkspaceIds}
+								sections={allSections}
+								shortcutLabel={workspaceShortcutLabels.get(workspace.id)}
+							/>
+						))}
+						{sections.map((section) => (
+							<DashboardSidebarSectionComponent
+								key={section.id}
+								projectId={projectId}
+								section={section}
+								allSections={allSections}
+								workspaceShortcutLabels={workspaceShortcutLabels}
+								onDelete={onDeleteSection}
+								onRename={onRenameSection}
+								onToggleCollapse={onToggleSectionCollapse}
+							/>
+						))}
+					</div>
+				</motion.div>
+			)}
+		</AnimatePresence>
 	);
 }

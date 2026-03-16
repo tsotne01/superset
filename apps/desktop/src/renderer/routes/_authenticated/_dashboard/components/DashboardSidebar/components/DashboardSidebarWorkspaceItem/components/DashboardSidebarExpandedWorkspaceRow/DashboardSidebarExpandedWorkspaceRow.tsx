@@ -1,9 +1,16 @@
+import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
 import { cn } from "@superset/ui/utils";
 import { type ComponentPropsWithoutRef, forwardRef } from "react";
+import { HiMiniXMark } from "react-icons/hi2";
 import { RenameInput } from "renderer/screens/main/components/WorkspaceSidebar/RenameInput";
+import type { WorkspaceRowMockData } from "../../utils";
+import { DashboardSidebarWorkspaceDiffStats } from "../DashboardSidebarWorkspaceDiffStats";
+import { DashboardSidebarWorkspaceIcon } from "../DashboardSidebarWorkspaceIcon";
+import { DashboardSidebarWorkspaceStatusBadge } from "../DashboardSidebarWorkspaceStatusBadge";
 
 interface DashboardSidebarExpandedWorkspaceRowProps
-	extends ComponentPropsWithoutRef<"button"> {
+	extends ComponentPropsWithoutRef<"div"> {
+	accentColor?: string | null;
 	name: string;
 	branch: string;
 	isActive: boolean;
@@ -11,19 +18,23 @@ interface DashboardSidebarExpandedWorkspaceRowProps
 	isRenaming: boolean;
 	renameValue: string;
 	shortcutLabel?: string;
+	mockData: WorkspaceRowMockData;
 	onClick: () => void;
+	onDoubleClick?: () => void;
+	onDeleteClick: () => void;
 	onRenameValueChange: (value: string) => void;
 	onSubmitRename: () => void;
 	onCancelRename: () => void;
-	setDragHandle: (node: HTMLButtonElement | null) => void;
+	setDragHandle: (node: HTMLDivElement | null) => void;
 }
 
 export const DashboardSidebarExpandedWorkspaceRow = forwardRef<
-	HTMLButtonElement,
+	HTMLDivElement,
 	DashboardSidebarExpandedWorkspaceRowProps
 >(
 	(
 		{
+			accentColor = null,
 			name,
 			branch,
 			isActive,
@@ -31,7 +42,10 @@ export const DashboardSidebarExpandedWorkspaceRow = forwardRef<
 			isRenaming,
 			renameValue,
 			shortcutLabel,
+			mockData,
 			onClick,
+			onDoubleClick,
+			onDeleteClick,
 			onRenameValueChange,
 			onSubmitRename,
 			onCancelRename,
@@ -41,11 +55,20 @@ export const DashboardSidebarExpandedWorkspaceRow = forwardRef<
 		},
 		ref,
 	) => {
-		const showBranch = !!name && name !== branch;
+		const showBranchSubtitle = !!name && name !== branch;
+		const showSubtitle = showBranchSubtitle || !!mockData.pr;
+		const showsStandaloneActiveStripe = accentColor == null;
+		const activeAccentStyle = isActive
+			? {
+					backgroundColor: "var(--color-foreground)",
+				}
+			: undefined;
 
 		return (
-			<button
-				type="button"
+			// biome-ignore lint/a11y/useSemanticElements: Mirrors the legacy sidebar row UI, which includes nested action buttons.
+			<div
+				role="button"
+				tabIndex={0}
 				ref={(node) => {
 					setDragHandle(node);
 					if (typeof ref === "function") {
@@ -55,10 +78,17 @@ export const DashboardSidebarExpandedWorkspaceRow = forwardRef<
 					}
 				}}
 				onClick={onClick}
+				onKeyDown={(event) => {
+					if (event.key === "Enter" || event.key === " ") {
+						event.preventDefault();
+						onClick();
+					}
+				}}
+				onDoubleClick={onDoubleClick}
 				className={cn(
-					"flex w-full pl-3 pr-2 text-sm text-left cursor-pointer relative",
+					"relative flex w-full items-center pl-3 pr-2 text-left text-sm cursor-pointer",
 					"hover:bg-muted/50 transition-colors group",
-					showBranch ? "py-1.5" : "py-2 items-center",
+					showSubtitle ? "py-1.5" : "py-2",
 					isActive && "bg-muted",
 					isDragging && "opacity-30",
 					className,
@@ -66,21 +96,120 @@ export const DashboardSidebarExpandedWorkspaceRow = forwardRef<
 				{...props}
 			>
 				{isActive && (
-					<div className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary rounded-r" />
+					<div
+						className={cn(
+							"absolute top-0 bottom-0 w-0.5 rounded-r",
+							showsStandaloneActiveStripe ? "left-0" : "-left-0.5",
+						)}
+						style={activeAccentStyle}
+					/>
 				)}
 
-				<div className="flex-1 min-w-0">
-					{isRenaming ? (
-						<RenameInput
-							value={renameValue}
-							onChange={onRenameValueChange}
-							onSubmit={onSubmitRename}
-							onCancel={onCancelRename}
-							className="h-6 px-1 py-0 text-[13px] -ml-1 bg-transparent border-none outline-none w-full"
-						/>
+				<Tooltip delayDuration={500}>
+					<TooltipTrigger asChild>
+						<div className="relative mr-2.5 flex size-5 shrink-0 items-center justify-center">
+							<DashboardSidebarWorkspaceIcon
+								isActive={isActive}
+								isUnread={mockData.isUnread}
+								variant="expanded"
+								workspaceStatus={mockData.workspaceStatus}
+							/>
+						</div>
+					</TooltipTrigger>
+					<TooltipContent side="right" sideOffset={8}>
+						<p className="text-xs font-medium">Worktree workspace</p>
+						<p className="text-xs text-muted-foreground">
+							Isolated copy for parallel development
+						</p>
+					</TooltipContent>
+				</Tooltip>
+
+				<div className="flex min-w-0 flex-1 flex-col justify-center">
+					{showSubtitle ? (
+						<div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-2 items-center gap-x-1.5 gap-y-0.5">
+							{isRenaming ? (
+								<RenameInput
+									value={renameValue}
+									onChange={onRenameValueChange}
+									onSubmit={onSubmitRename}
+									onCancel={onCancelRename}
+									className={cn(
+										"h-6 w-full -ml-1 border-none bg-transparent px-1 py-0 text-[13px] leading-tight outline-none",
+										!showBranchSubtitle && "row-span-2 self-center",
+									)}
+								/>
+							) : (
+								<span
+									className={cn(
+										"truncate text-[13px] leading-tight transition-colors",
+										isActive
+											? "text-foreground font-medium"
+											: "text-foreground/80",
+										!showBranchSubtitle && "row-span-2 self-center",
+									)}
+								>
+									{name || branch}
+								</span>
+							)}
+
+							<div className="col-start-2 row-start-1 grid h-5 shrink-0 items-center [&>*]:col-start-1 [&>*]:row-start-1">
+								<DashboardSidebarWorkspaceDiffStats
+									additions={mockData.diffStats.additions}
+									deletions={mockData.diffStats.deletions}
+									isActive={isActive}
+								/>
+								<div className="invisible flex items-center justify-end gap-1.5 opacity-0 transition-[opacity,visibility] group-hover:visible group-hover:opacity-100">
+									{shortcutLabel && (
+										<span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+											{shortcutLabel}
+										</span>
+									)}
+									<Tooltip delayDuration={300}>
+										<TooltipTrigger asChild>
+											<button
+												type="button"
+												onClick={(event) => {
+													event.stopPropagation();
+													onDeleteClick();
+												}}
+												className="flex items-center justify-center text-muted-foreground hover:text-foreground"
+												aria-label="Close workspace"
+											>
+												<HiMiniXMark className="size-3.5" />
+											</button>
+										</TooltipTrigger>
+										<TooltipContent side="top" sideOffset={4}>
+											Close workspace
+										</TooltipContent>
+									</Tooltip>
+								</div>
+							</div>
+
+							{showBranchSubtitle && (
+								<span className="col-start-1 row-start-2 truncate font-mono text-[11px] leading-tight text-muted-foreground/60">
+									{branch}
+								</span>
+							)}
+
+							{mockData.pr && (
+								<DashboardSidebarWorkspaceStatusBadge
+									state={mockData.pr.state}
+									prNumber={mockData.pr.number}
+									className="col-start-2 row-start-2 justify-self-end"
+								/>
+							)}
+						</div>
 					) : (
-						<>
-							<div className="flex items-center gap-1.5">
+						<div className="flex min-h-5 items-center gap-1.5">
+							{isRenaming ? (
+								<RenameInput
+									value={renameValue}
+									onChange={onRenameValueChange}
+									onSubmit={onSubmitRename}
+									onCancel={onCancelRename}
+									className="h-6 w-full flex-1 -ml-1 border-none bg-transparent px-1 py-0 text-[13px] leading-tight outline-none"
+								/>
+							) : (
 								<span
 									className={cn(
 										"truncate text-[13px] leading-tight transition-colors flex-1",
@@ -91,23 +220,44 @@ export const DashboardSidebarExpandedWorkspaceRow = forwardRef<
 								>
 									{name || branch}
 								</span>
-
-								{shortcutLabel && (
-									<span className="text-[10px] text-muted-foreground/40 font-mono tabular-nums shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-										{shortcutLabel}
-									</span>
-								)}
-							</div>
-
-							{showBranch && (
-								<span className="text-[11px] text-muted-foreground/60 truncate font-mono leading-tight block">
-									{branch}
-								</span>
 							)}
-						</>
+
+							<div className="grid h-5 shrink-0 items-center [&>*]:col-start-1 [&>*]:row-start-1">
+								<DashboardSidebarWorkspaceDiffStats
+									additions={mockData.diffStats.additions}
+									deletions={mockData.diffStats.deletions}
+									isActive={isActive}
+								/>
+								<div className="invisible flex items-center justify-end gap-1.5 opacity-0 transition-[opacity,visibility] group-hover:visible group-hover:opacity-100">
+									{shortcutLabel && (
+										<span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+											{shortcutLabel}
+										</span>
+									)}
+									<Tooltip delayDuration={300}>
+										<TooltipTrigger asChild>
+											<button
+												type="button"
+												onClick={(event) => {
+													event.stopPropagation();
+													onDeleteClick();
+												}}
+												className="flex items-center justify-center text-muted-foreground hover:text-foreground"
+												aria-label="Close workspace"
+											>
+												<HiMiniXMark className="size-3.5" />
+											</button>
+										</TooltipTrigger>
+										<TooltipContent side="top" sideOffset={4}>
+											Close workspace
+										</TooltipContent>
+									</Tooltip>
+								</div>
+							</div>
+						</div>
 					)}
 				</div>
-			</button>
+			</div>
 		);
 	},
 );

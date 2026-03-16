@@ -4,11 +4,16 @@ import { DashboardSidebarDeleteDialog } from "../DashboardSidebarDeleteDialog";
 import { DashboardSidebarCollapsedWorkspaceButton } from "./components/DashboardSidebarCollapsedWorkspaceButton";
 import { DashboardSidebarExpandedWorkspaceRow } from "./components/DashboardSidebarExpandedWorkspaceRow";
 import { DashboardSidebarWorkspaceContextMenu } from "./components/DashboardSidebarWorkspaceContextMenu/DashboardSidebarWorkspaceContextMenu";
+import { DashboardSidebarWorkspaceHoverCardContent } from "./components/DashboardSidebarWorkspaceHoverCardContent";
 import { useDashboardSidebarWorkspaceItemActions } from "./hooks/useDashboardSidebarWorkspaceItemActions";
+import { getWorkspaceRowMocks } from "./utils";
+
+const EMPTY_SECTIONS: { id: string; name: string }[] = [];
 
 interface DashboardSidebarWorkspaceItemProps {
 	id: string;
 	projectId: string;
+	accentColor?: string | null;
 	sectionId?: string | null;
 	name: string;
 	branch: string;
@@ -22,15 +27,17 @@ interface DashboardSidebarWorkspaceItemProps {
 export function DashboardSidebarWorkspaceItem({
 	id,
 	projectId,
+	accentColor = null,
 	sectionId = null,
 	name,
 	branch,
 	index,
 	workspaceIds,
-	sections = [],
+	sections = EMPTY_SECTIONS,
 	shortcutLabel,
 	isCollapsed = false,
 }: DashboardSidebarWorkspaceItemProps) {
+	const mockData = getWorkspaceRowMocks(id);
 	const {
 		cancelRename,
 		handleClick,
@@ -67,7 +74,13 @@ export function DashboardSidebarWorkspaceItem({
 		return (
 			<>
 				<DashboardSidebarWorkspaceContextMenu
-					id={id}
+					hoverCardContent={
+						<DashboardSidebarWorkspaceHoverCardContent
+							name={name}
+							branch={branch}
+							mockData={mockData}
+						/>
+					}
 					sections={sections}
 					onCreateSection={handleCreateSection}
 					onMoveToSection={(targetSectionId) =>
@@ -82,10 +95,12 @@ export function DashboardSidebarWorkspaceItem({
 							<DashboardSidebarCollapsedWorkspaceButton
 								isActive={isActive}
 								isDragging={isDragging}
+								isUnread={mockData.isUnread}
 								onClick={handleClick}
 								setDragHandle={(node) => {
 									drag(drop(node));
 								}}
+								workspaceStatus={mockData.workspaceStatus}
 							/>
 						</TooltipTrigger>
 						<TooltipContent side="right" className="flex flex-col gap-0.5">
@@ -114,7 +129,13 @@ export function DashboardSidebarWorkspaceItem({
 	return (
 		<>
 			<DashboardSidebarWorkspaceContextMenu
-				id={id}
+				hoverCardContent={
+					<DashboardSidebarWorkspaceHoverCardContent
+						name={name}
+						branch={branch}
+						mockData={mockData}
+					/>
+				}
 				sections={sections}
 				onCreateSection={handleCreateSection}
 				onMoveToSection={(targetSectionId) =>
@@ -125,6 +146,7 @@ export function DashboardSidebarWorkspaceItem({
 				onDelete={() => setIsDeleteDialogOpen(true)}
 			>
 				<DashboardSidebarExpandedWorkspaceRow
+					accentColor={accentColor}
 					name={name}
 					branch={branch}
 					isActive={isActive}
@@ -132,7 +154,10 @@ export function DashboardSidebarWorkspaceItem({
 					isRenaming={isRenaming}
 					renameValue={renameValue}
 					shortcutLabel={shortcutLabel}
+					mockData={mockData}
 					onClick={handleClick}
+					onDoubleClick={startRename}
+					onDeleteClick={() => setIsDeleteDialogOpen(true)}
 					onRenameValueChange={setRenameValue}
 					onSubmitRename={submitRename}
 					onCancelRename={cancelRename}
