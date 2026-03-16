@@ -14,7 +14,6 @@ interface DashboardSidebarCollapsedProjectContentProps
 	isCollapsed: boolean;
 	totalWorkspaceCount: number;
 	workspaces: DashboardSidebarWorkspace[];
-	allSections: Array<{ id: string; name: string }>;
 	workspaceShortcutLabels: Map<string, string>;
 	onToggleCollapse: () => void;
 }
@@ -31,7 +30,6 @@ export const DashboardSidebarCollapsedProjectContent = forwardRef<
 			isCollapsed,
 			totalWorkspaceCount,
 			workspaces,
-			allSections,
 			workspaceShortcutLabels,
 			onToggleCollapse,
 			className,
@@ -91,7 +89,6 @@ export const DashboardSidebarCollapsedProjectContent = forwardRef<
 										hostType={workspace.hostType}
 										name={workspace.name}
 										branch={workspace.branch}
-										sections={allSections}
 										shortcutLabel={workspaceShortcutLabels.get(workspace.id)}
 										isCollapsed
 									/>

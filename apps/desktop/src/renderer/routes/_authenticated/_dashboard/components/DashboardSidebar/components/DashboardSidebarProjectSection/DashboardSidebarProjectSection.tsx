@@ -1,48 +1,38 @@
 import { cn } from "@superset/ui/utils";
 import { useMemo } from "react";
-import type {
-	DashboardSidebarSection,
-	DashboardSidebarWorkspace,
-} from "../../types";
+import type { DashboardSidebarProject } from "../../types";
+import {
+	getProjectChildrenSections,
+	getProjectChildrenWorkspaces,
+} from "../../utils/projectChildren";
 import { DashboardSidebarDeleteDialog } from "../DashboardSidebarDeleteDialog";
 import { DashboardSidebarCollapsedProjectContent } from "./components/DashboardSidebarCollapsedProjectContent";
 import { DashboardSidebarExpandedProjectContent } from "./components/DashboardSidebarExpandedProjectContent";
 import { DashboardSidebarProjectContextMenu } from "./components/DashboardSidebarProjectContextMenu";
 import { DashboardSidebarProjectRow } from "./components/DashboardSidebarProjectRow";
 import { useDashboardSidebarProjectSectionActions } from "./hooks/useDashboardSidebarProjectSectionActions";
-import { countProjectWorkspaces } from "./utils/countProjectWorkspaces";
 
 interface DashboardSidebarProjectSectionProps {
-	projectId: string;
-	projectName: string;
-	githubOwner: string | null;
-	isCollapsed: boolean;
+	project: DashboardSidebarProject;
 	isSidebarCollapsed?: boolean;
-	workspaces: DashboardSidebarWorkspace[];
-	sections: DashboardSidebarSection[];
 	workspaceShortcutLabels: Map<string, string>;
 	onToggleCollapse: (projectId: string) => void;
 }
 
 export function DashboardSidebarProjectSection({
-	projectId,
-	projectName,
-	githubOwner,
-	isCollapsed,
+	project,
 	isSidebarCollapsed = false,
-	workspaces,
-	sections,
 	workspaceShortcutLabels,
 	onToggleCollapse,
 }: DashboardSidebarProjectSectionProps) {
 	const allSections = useMemo(
-		() => sections.map((section) => ({ id: section.id, name: section.name })),
-		[sections],
+		() => getProjectChildrenSections(project.children),
+		[project.children],
 	);
 
 	const flattenedCollapsedWorkspaces = useMemo(
-		() => [...workspaces, ...sections.flatMap((section) => section.workspaces)],
-		[sections, workspaces],
+		() => getProjectChildrenWorkspaces(project.children),
+		[project.children],
 	);
 
 	const {
@@ -63,35 +53,31 @@ export function DashboardSidebarProjectSection({
 		submitRename,
 		toggleSectionCollapsed,
 	} = useDashboardSidebarProjectSectionActions({
-		projectId,
-		projectName,
-		workspaces,
-		sections,
+		project,
 	});
 
-	const totalWorkspaceCount = countProjectWorkspaces(workspaces, sections);
+	const totalWorkspaceCount = flattenedCollapsedWorkspaces.length;
 
 	if (isSidebarCollapsed) {
 		return (
 			<>
 				<DashboardSidebarProjectContextMenu
-					id={projectId}
+					id={project.id}
 					onCreateSection={handleNewSection}
-					onRemoveFromSidebar={() => removeProjectFromSidebar(projectId)}
+					onRemoveFromSidebar={() => removeProjectFromSidebar(project.id)}
 					onRename={startRename}
 					onDelete={() => setIsDeleteDialogOpen(true)}
 				>
 					<div className={cn("border-b border-border last:border-b-0")}>
 						<DashboardSidebarCollapsedProjectContent
-							projectId={projectId}
-							projectName={projectName}
-							githubOwner={githubOwner}
-							isCollapsed={isCollapsed}
+							projectId={project.id}
+							projectName={project.name}
+							githubOwner={project.githubOwner}
+							isCollapsed={project.isCollapsed}
 							totalWorkspaceCount={totalWorkspaceCount}
 							workspaces={flattenedCollapsedWorkspaces}
-							allSections={allSections}
 							workspaceShortcutLabels={workspaceShortcutLabels}
-							onToggleCollapse={() => onToggleCollapse(projectId)}
+							onToggleCollapse={() => onToggleCollapse(project.id)}
 						/>
 					</div>
 				</DashboardSidebarProjectContextMenu>
@@ -100,7 +86,7 @@ export function DashboardSidebarProjectSection({
 					open={isDeleteDialogOpen}
 					onOpenChange={setIsDeleteDialogOpen}
 					onConfirm={handleDelete}
-					title={`Delete "${projectName}"?`}
+					title={`Delete "${project.name}"?`}
 					description="This will permanently delete the project and all its workspaces."
 					isPending={isDeleting}
 				/>
@@ -112,33 +98,32 @@ export function DashboardSidebarProjectSection({
 		<>
 			<div className={cn("border-b border-border last:border-b-0")}>
 				<DashboardSidebarProjectContextMenu
-					id={projectId}
+					id={project.id}
 					onCreateSection={handleNewSection}
-					onRemoveFromSidebar={() => removeProjectFromSidebar(projectId)}
+					onRemoveFromSidebar={() => removeProjectFromSidebar(project.id)}
 					onRename={startRename}
 					onDelete={() => setIsDeleteDialogOpen(true)}
 				>
 					<DashboardSidebarProjectRow
-						projectName={projectName}
-						githubOwner={githubOwner}
+						projectName={project.name}
+						githubOwner={project.githubOwner}
 						totalWorkspaceCount={totalWorkspaceCount}
-						isCollapsed={isCollapsed}
+						isCollapsed={project.isCollapsed}
 						isRenaming={isRenaming}
 						renameValue={renameValue}
 						onRenameValueChange={setRenameValue}
 						onSubmitRename={submitRename}
 						onCancelRename={cancelRename}
 						onStartRename={startRename}
-						onToggleCollapse={() => onToggleCollapse(projectId)}
+						onToggleCollapse={() => onToggleCollapse(project.id)}
 						onNewWorkspace={handleNewWorkspace}
 					/>
 				</DashboardSidebarProjectContextMenu>
 
 				<DashboardSidebarExpandedProjectContent
-					projectId={projectId}
-					isCollapsed={isCollapsed}
-					workspaces={workspaces}
-					sections={sections}
+					projectId={project.id}
+					isCollapsed={project.isCollapsed}
+					projectChildren={project.children}
 					allSections={allSections}
 					workspaceShortcutLabels={workspaceShortcutLabels}
 					onDeleteSection={deleteSection}
@@ -151,7 +136,7 @@ export function DashboardSidebarProjectSection({
 				open={isDeleteDialogOpen}
 				onOpenChange={setIsDeleteDialogOpen}
 				onConfirm={handleDelete}
-				title={`Delete "${projectName}"?`}
+				title={`Delete "${project.name}"?`}
 				description="This will permanently delete the project and all its workspaces."
 				isPending={isDeleting}
 			/>

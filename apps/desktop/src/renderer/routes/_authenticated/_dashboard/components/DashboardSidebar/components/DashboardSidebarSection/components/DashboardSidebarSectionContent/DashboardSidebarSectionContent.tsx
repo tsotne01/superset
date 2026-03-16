@@ -5,14 +5,12 @@ import { DashboardSidebarWorkspaceItem } from "../../../DashboardSidebarWorkspac
 interface DashboardSidebarSectionContentProps {
 	projectId: string;
 	section: DashboardSidebarSection;
-	allSections: Array<{ id: string; name: string }>;
 	workspaceShortcutLabels: Map<string, string>;
 }
 
 export function DashboardSidebarSectionContent({
 	projectId,
 	section,
-	allSections,
 	workspaceShortcutLabels,
 }: DashboardSidebarSectionContentProps) {
 	return (
@@ -35,7 +33,6 @@ export function DashboardSidebarSectionContent({
 								hostType={workspace.hostType}
 								name={workspace.name}
 								branch={workspace.branch}
-								sections={allSections}
 								shortcutLabel={workspaceShortcutLabels.get(workspace.id)}
 							/>
 						))}

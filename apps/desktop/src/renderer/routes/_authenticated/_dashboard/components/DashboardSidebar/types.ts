@@ -25,6 +25,16 @@ export interface DashboardSidebarSection {
 	workspaces: DashboardSidebarWorkspace[];
 }
 
+export type DashboardSidebarProjectChild =
+	| {
+			type: "workspace";
+			workspace: DashboardSidebarWorkspace;
+	  }
+	| {
+			type: "section";
+			section: DashboardSidebarSection;
+	  };
+
 export interface DashboardSidebarProject {
 	id: string;
 	name: string;
@@ -34,6 +44,5 @@ export interface DashboardSidebarProject {
 	createdAt: Date;
 	updatedAt: Date;
 	isCollapsed: boolean;
-	workspaces: DashboardSidebarWorkspace[];
-	sections: DashboardSidebarSection[];
+	children: DashboardSidebarProjectChild[];
 }

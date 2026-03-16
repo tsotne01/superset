@@ -13,6 +13,8 @@ import {
 	HoverCardContent,
 	HoverCardTrigger,
 } from "@superset/ui/hover-card";
+import { eq } from "@tanstack/db";
+import { useLiveQuery } from "@tanstack/react-db";
 import { useState } from "react";
 import {
 	LuArrowRightLeft,
@@ -21,10 +23,11 @@ import {
 	LuPencil,
 	LuTrash2,
 } from "react-icons/lu";
+import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 
 interface DashboardSidebarWorkspaceContextMenuProps {
 	hoverCardContent?: React.ReactNode;
-	sections: { id: string; name: string }[];
+	projectId: string;
 	onCreateSection: () => void;
 	onMoveToSection: (sectionId: string | null) => void;
 	onRemoveFromSidebar: () => void;
@@ -34,7 +37,7 @@ interface DashboardSidebarWorkspaceContextMenuProps {
 }
 
 export function DashboardSidebarWorkspaceContextMenu({
-	sections,
+	projectId,
 	hoverCardContent,
 	onCreateSection,
 	onMoveToSection,
@@ -43,7 +46,22 @@ export function DashboardSidebarWorkspaceContextMenu({
 	onDelete,
 	children,
 }: DashboardSidebarWorkspaceContextMenuProps) {
+	const collections = useCollections();
 	const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
+	const { data: sections = [] } = useLiveQuery(
+		(q) =>
+			q
+				.from({ sidebarSections: collections.v2SidebarSections })
+				.where(({ sidebarSections }) =>
+					eq(sidebarSections.projectId, projectId),
+				)
+				.orderBy(({ sidebarSections }) => sidebarSections.tabOrder, "asc")
+				.select(({ sidebarSections }) => ({
+					id: sidebarSections.sectionId,
+					name: sidebarSections.name,
+				})),
+		[collections, projectId],
+	);
 
 	const menuContent = (
 		<ContextMenuContent>

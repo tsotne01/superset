@@ -1,26 +1,41 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { navigateToV2Workspace } from "renderer/routes/_authenticated/_dashboard/utils/workspace-navigation";
 import { useAppHotkey } from "renderer/stores/hotkeys";
-import type { DashboardSidebarWorkspace } from "../../types";
+import type { DashboardSidebarProject } from "../../types";
+import { getProjectChildrenWorkspaces } from "../../utils/projectChildren";
 
-/**
- * Keyboard shortcuts for V2 workspace switching (⌘1-9).
- * Mirrors the legacy useWorkspaceShortcuts hook but for V2 workspaces.
- */
+const MAX_SHORTCUT_COUNT = 9;
+
 export function useDashboardSidebarShortcuts(
-	allWorkspaces: DashboardSidebarWorkspace[],
+	groups: DashboardSidebarProject[],
 ) {
 	const navigate = useNavigate();
+	const flattenedWorkspaces = useMemo(
+		() =>
+			groups.flatMap((project) =>
+				getProjectChildrenWorkspaces(project.children),
+			),
+		[groups],
+	);
+	const workspaceShortcutLabels = useMemo(
+		() =>
+			new Map(
+				flattenedWorkspaces
+					.slice(0, MAX_SHORTCUT_COUNT)
+					.map((workspace, index) => [workspace.id, `⌘${index + 1}`]),
+			),
+		[flattenedWorkspaces],
+	);
 
 	const switchToWorkspace = useCallback(
 		(index: number) => {
-			const workspace = allWorkspaces[index];
+			const workspace = flattenedWorkspaces[index];
 			if (workspace) {
 				navigateToV2Workspace(workspace.id, navigate);
 			}
 		},
-		[allWorkspaces, navigate],
+		[flattenedWorkspaces, navigate],
 	);
 
 	useAppHotkey("JUMP_TO_WORKSPACE_1", () => switchToWorkspace(0), undefined, [
@@ -51,5 +66,5 @@ export function useDashboardSidebarShortcuts(
 		switchToWorkspace,
 	]);
 
-	return { allWorkspaces };
+	return workspaceShortcutLabels;
 }

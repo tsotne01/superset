@@ -1,16 +1,12 @@
 import { AnimatePresence, motion } from "framer-motion";
-import type {
-	DashboardSidebarSection,
-	DashboardSidebarWorkspace,
-} from "../../../../types";
+import type { DashboardSidebarProjectChild } from "../../../../types";
 import { DashboardSidebarSection as DashboardSidebarSectionComponent } from "../../../DashboardSidebarSection";
 import { DashboardSidebarWorkspaceItem } from "../../../DashboardSidebarWorkspaceItem";
 
 interface DashboardSidebarExpandedProjectContentProps {
 	projectId: string;
 	isCollapsed: boolean;
-	workspaces: DashboardSidebarWorkspace[];
-	sections: DashboardSidebarSection[];
+	projectChildren: DashboardSidebarProjectChild[];
 	allSections: Array<{ id: string; name: string }>;
 	workspaceShortcutLabels: Map<string, string>;
 	onDeleteSection: (sectionId: string) => void;
@@ -21,8 +17,7 @@ interface DashboardSidebarExpandedProjectContentProps {
 export function DashboardSidebarExpandedProjectContent({
 	projectId,
 	isCollapsed,
-	workspaces,
-	sections,
+	projectChildren,
 	allSections,
 	workspaceShortcutLabels,
 	onDeleteSection,
@@ -40,31 +35,33 @@ export function DashboardSidebarExpandedProjectContent({
 					className="overflow-hidden"
 				>
 					<div className="pb-1">
-						{workspaces.map((workspace) => (
-							<DashboardSidebarWorkspaceItem
-								key={workspace.id}
-								id={workspace.id}
-								projectId={projectId}
-								accentColor={null}
-								hostType={workspace.hostType}
-								name={workspace.name}
-								branch={workspace.branch}
-								sections={allSections}
-								shortcutLabel={workspaceShortcutLabels.get(workspace.id)}
-							/>
-						))}
-						{sections.map((section) => (
-							<DashboardSidebarSectionComponent
-								key={section.id}
-								projectId={projectId}
-								section={section}
-								allSections={allSections}
-								workspaceShortcutLabels={workspaceShortcutLabels}
-								onDelete={onDeleteSection}
-								onRename={onRenameSection}
-								onToggleCollapse={onToggleSectionCollapse}
-							/>
-						))}
+						{projectChildren.map((child) =>
+							child.type === "workspace" ? (
+								<DashboardSidebarWorkspaceItem
+									key={child.workspace.id}
+									id={child.workspace.id}
+									projectId={projectId}
+									accentColor={null}
+									hostType={child.workspace.hostType}
+									name={child.workspace.name}
+									branch={child.workspace.branch}
+									shortcutLabel={workspaceShortcutLabels.get(
+										child.workspace.id,
+									)}
+								/>
+							) : (
+								<DashboardSidebarSectionComponent
+									key={child.section.id}
+									projectId={projectId}
+									section={child.section}
+									allSections={allSections}
+									workspaceShortcutLabels={workspaceShortcutLabels}
+									onDelete={onDeleteSection}
+									onRename={onRenameSection}
+									onToggleCollapse={onToggleSectionCollapse}
+								/>
+							),
+						)}
 					</div>
 				</motion.div>
 			)}

@@ -19,7 +19,6 @@ interface DashboardSidebarSectionProps {
 export function DashboardSidebarSection({
 	projectId,
 	section,
-	allSections,
 	workspaceShortcutLabels,
 	onDelete,
 	onRename,
@@ -75,7 +74,6 @@ export function DashboardSidebarSection({
 			<DashboardSidebarSectionContent
 				projectId={projectId}
 				section={section}
-				allSections={allSections}
 				workspaceShortcutLabels={workspaceShortcutLabels}
 			/>
 		</div>

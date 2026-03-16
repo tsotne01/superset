@@ -1,10 +1,15 @@
+import { eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
-import type { DashboardSidebarProject } from "../../types";
-import { buildDashboardSidebarProjects } from "./utils";
+import type {
+	DashboardSidebarProject,
+	DashboardSidebarProjectChild,
+	DashboardSidebarSection,
+	DashboardSidebarWorkspace,
+} from "../../types";
 
 export function useDashboardSidebarData() {
 	const collections = useCollections();
@@ -12,73 +17,175 @@ export function useDashboardSidebarData() {
 	const { data: deviceInfo } = electronTrpc.auth.getDeviceInfo.useQuery();
 
 	const { data: sidebarProjects = [] } = useLiveQuery(
-		(q) => q.from({ sidebarProjects: collections.v2SidebarProjects }),
-		[collections],
-	);
-
-	const { data: sidebarWorkspaces = [] } = useLiveQuery(
-		(q) => q.from({ sidebarWorkspaces: collections.v2SidebarWorkspaces }),
+		(q) =>
+			q
+				.from({ sidebarProjects: collections.v2SidebarProjects })
+				.innerJoin(
+					{ projects: collections.v2Projects },
+					({ sidebarProjects, projects }) =>
+						eq(sidebarProjects.projectId, projects.id),
+				)
+				.leftJoin(
+					{ repos: collections.githubRepositories },
+					({ projects, repos }) => eq(projects.githubRepositoryId, repos.id),
+				)
+				.orderBy(({ sidebarProjects }) => sidebarProjects.tabOrder, "asc")
+				.select(({ sidebarProjects, projects, repos }) => ({
+					id: projects.id,
+					name: projects.name,
+					slug: projects.slug,
+					githubRepositoryId: projects.githubRepositoryId,
+					githubOwner: repos?.owner ?? null,
+					createdAt: projects.createdAt,
+					updatedAt: projects.updatedAt,
+					isCollapsed: sidebarProjects.isCollapsed,
+				})),
 		[collections],
 	);
 
 	const { data: sidebarSections = [] } = useLiveQuery(
-		(q) => q.from({ sidebarSections: collections.v2SidebarSections }),
-		[collections],
-	);
-
-	const { data: projects = [] } = useLiveQuery(
-		(q) => q.from({ v2Projects: collections.v2Projects }),
-		[collections],
-	);
-
-	const { data: workspaces = [] } = useLiveQuery(
-		(q) => q.from({ v2Workspaces: collections.v2Workspaces }),
-		[collections],
-	);
-
-	const { data: devices = [] } = useLiveQuery(
 		(q) =>
-			q.from({ v2Devices: collections.v2Devices }).select(({ v2Devices }) => ({
-				id: v2Devices.id,
-				clientId: v2Devices.clientId,
-				type: v2Devices.type,
-			})),
+			q
+				.from({ sidebarSections: collections.v2SidebarSections })
+				.orderBy(({ sidebarSections }) => sidebarSections.tabOrder, "asc")
+				.select(({ sidebarSections }) => ({
+					id: sidebarSections.sectionId,
+					projectId: sidebarSections.projectId,
+					name: sidebarSections.name,
+					createdAt: sidebarSections.createdAt,
+					isCollapsed: sidebarSections.isCollapsed,
+					tabOrder: sidebarSections.tabOrder,
+					color: sidebarSections.color,
+				})),
 		[collections],
 	);
 
-	const currentDeviceId =
-		devices.find((device) => device.clientId === deviceInfo?.deviceId)?.id ??
-		null;
-
-	const { data: githubRepos = [] } = useLiveQuery(
+	const { data: sidebarWorkspaces = [] } = useLiveQuery(
 		(q) =>
-			q.from({ repos: collections.githubRepositories }).select(({ repos }) => ({
-				id: repos.id,
-				owner: repos.owner,
-			})),
+			q
+				.from({ sidebarWorkspaces: collections.v2SidebarWorkspaces })
+				.innerJoin(
+					{ workspaces: collections.v2Workspaces },
+					({ sidebarWorkspaces, workspaces }) =>
+						eq(sidebarWorkspaces.workspaceId, workspaces.id),
+				)
+				.leftJoin(
+					{ devices: collections.v2Devices },
+					({ workspaces, devices }) => eq(workspaces.deviceId, devices.id),
+				)
+				.orderBy(({ sidebarWorkspaces }) => sidebarWorkspaces.tabOrder, "asc")
+				.select(({ sidebarWorkspaces, workspaces, devices }) => ({
+					id: workspaces.id,
+					projectId: sidebarWorkspaces.projectId,
+					deviceId: workspaces.deviceId,
+					deviceType: devices?.type ?? null,
+					deviceClientId: devices?.clientId ?? null,
+					name: workspaces.name,
+					branch: workspaces.branch,
+					createdAt: workspaces.createdAt,
+					updatedAt: workspaces.updatedAt,
+					tabOrder: sidebarWorkspaces.tabOrder,
+					sectionId: sidebarWorkspaces.sectionId,
+				})),
 		[collections],
 	);
 
 	const groups = useMemo<DashboardSidebarProject[]>(() => {
-		return buildDashboardSidebarProjects({
-			currentDeviceId,
-			devices,
-			githubRepos,
-			projects,
-			sidebarProjects,
-			sidebarSections,
-			sidebarWorkspaces,
-			workspaces,
+		const projectsById = new Map<
+			string,
+			DashboardSidebarProject & {
+				sectionMap: Map<string, DashboardSidebarSection>;
+				childEntries: Array<{
+					tabOrder: number;
+					child: DashboardSidebarProjectChild;
+				}>;
+			}
+		>();
+
+		for (const project of sidebarProjects) {
+			projectsById.set(project.id, {
+				...project,
+				children: [],
+				sectionMap: new Map(),
+				childEntries: [],
+			});
+		}
+
+		for (const section of sidebarSections) {
+			const project = projectsById.get(section.projectId);
+			if (!project) continue;
+
+			const sidebarSection: DashboardSidebarSection = {
+				...section,
+				workspaces: [],
+			};
+
+			project.sectionMap.set(section.id, sidebarSection);
+			project.childEntries.push({
+				tabOrder: section.tabOrder,
+				child: {
+					type: "section",
+					section: sidebarSection,
+				},
+			});
+		}
+
+		for (const workspace of sidebarWorkspaces) {
+			const project = projectsById.get(workspace.projectId);
+			if (!project) continue;
+
+			const hostType: DashboardSidebarWorkspace["hostType"] =
+				workspace.deviceType === "cloud"
+					? "cloud"
+					: workspace.deviceClientId === deviceInfo?.deviceId
+						? "local-device"
+						: "remote-device";
+
+			const sidebarWorkspace: DashboardSidebarWorkspace = {
+				id: workspace.id,
+				projectId: workspace.projectId,
+				deviceId: workspace.deviceId,
+				hostType,
+				name: workspace.name,
+				branch: workspace.branch,
+				createdAt: workspace.createdAt,
+				updatedAt: workspace.updatedAt,
+			};
+
+			if (workspace.sectionId) {
+				project.sectionMap
+					.get(workspace.sectionId)
+					?.workspaces.push(sidebarWorkspace);
+				continue;
+			}
+
+			project.childEntries.push({
+				tabOrder: workspace.tabOrder,
+				child: {
+					type: "workspace",
+					workspace: sidebarWorkspace,
+				},
+			});
+		}
+
+		return sidebarProjects.flatMap((project) => {
+			const resolvedProject = projectsById.get(project.id);
+			if (!resolvedProject) return [];
+			const {
+				childEntries,
+				sectionMap: _sectionMap,
+				...sidebarProject
+			} = resolvedProject;
+			sidebarProject.children = childEntries
+				.sort((left, right) => left.tabOrder - right.tabOrder)
+				.map(({ child }) => child);
+			return [sidebarProject];
 		});
 	}, [
-		githubRepos,
-		currentDeviceId,
-		devices,
-		projects,
+		deviceInfo?.deviceId,
 		sidebarProjects,
 		sidebarSections,
 		sidebarWorkspaces,
-		workspaces,
 	]);
 
 	return {

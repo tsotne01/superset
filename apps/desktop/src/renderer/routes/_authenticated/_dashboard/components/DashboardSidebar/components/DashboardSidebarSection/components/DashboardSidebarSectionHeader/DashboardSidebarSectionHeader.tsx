@@ -54,7 +54,7 @@ export const DashboardSidebarSectionHeader = forwardRef<
 							}
 				}
 				className={cn(
-					"group flex min-h-10 w-full items-center pl-2 pr-2 py-2 text-sm font-medium",
+					"group flex min-h-8 w-full items-center pl-2 pr-2 py-1.5 text-[11px] font-medium",
 					"text-muted-foreground hover:bg-muted/50 transition-colors",
 					className,
 				)}
@@ -67,7 +67,7 @@ export const DashboardSidebarSectionHeader = forwardRef<
 							onChange={onRenameValueChange}
 							onSubmit={onSubmitRename}
 							onCancel={onCancelRename}
-							className="-ml-1 h-6 w-full min-w-0 px-1 py-0 text-sm font-medium bg-transparent border-none outline-none text-muted-foreground"
+							className="-ml-1 h-5 w-full min-w-0 px-1 py-0 text-[11px] font-medium bg-transparent border-none outline-none text-muted-foreground"
 						/>
 					) : (
 						<span className="truncate">{section.name}</span>

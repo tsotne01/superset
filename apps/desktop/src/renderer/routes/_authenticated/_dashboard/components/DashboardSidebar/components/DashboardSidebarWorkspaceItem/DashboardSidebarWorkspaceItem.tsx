@@ -7,8 +7,6 @@ import { DashboardSidebarWorkspaceHoverCardContent } from "./components/Dashboar
 import { useDashboardSidebarWorkspaceItemActions } from "./hooks/useDashboardSidebarWorkspaceItemActions";
 import { getWorkspaceRowMocks } from "./utils";
 
-const EMPTY_SECTIONS: { id: string; name: string }[] = [];
-
 interface DashboardSidebarWorkspaceItemProps {
 	id: string;
 	projectId: string;
@@ -16,7 +14,6 @@ interface DashboardSidebarWorkspaceItemProps {
 	hostType: "local-device" | "remote-device" | "cloud";
 	name: string;
 	branch: string;
-	sections?: { id: string; name: string }[];
 	shortcutLabel?: string;
 	isCollapsed?: boolean;
 }
@@ -28,7 +25,6 @@ export function DashboardSidebarWorkspaceItem({
 	hostType,
 	name,
 	branch,
-	sections = EMPTY_SECTIONS,
 	shortcutLabel,
 	isCollapsed = false,
 }: DashboardSidebarWorkspaceItemProps) {
@@ -61,6 +57,7 @@ export function DashboardSidebarWorkspaceItem({
 		return (
 			<>
 				<DashboardSidebarWorkspaceContextMenu
+					projectId={projectId}
 					hoverCardContent={
 						<DashboardSidebarWorkspaceHoverCardContent
 							name={name}
@@ -68,7 +65,6 @@ export function DashboardSidebarWorkspaceItem({
 							mockData={mockData}
 						/>
 					}
-					sections={sections}
 					onCreateSection={handleCreateSection}
 					onMoveToSection={(targetSectionId) =>
 						moveWorkspaceToSection(id, projectId, targetSectionId)
@@ -113,6 +109,7 @@ export function DashboardSidebarWorkspaceItem({
 	return (
 		<>
 			<DashboardSidebarWorkspaceContextMenu
+				projectId={projectId}
 				hoverCardContent={
 					<DashboardSidebarWorkspaceHoverCardContent
 						name={name}
@@ -120,7 +117,6 @@ export function DashboardSidebarWorkspaceItem({
 						mockData={mockData}
 					/>
 				}
-				sections={sections}
 				onCreateSection={handleCreateSection}
 				onMoveToSection={(targetSectionId) =>
 					moveWorkspaceToSection(id, projectId, targetSectionId)

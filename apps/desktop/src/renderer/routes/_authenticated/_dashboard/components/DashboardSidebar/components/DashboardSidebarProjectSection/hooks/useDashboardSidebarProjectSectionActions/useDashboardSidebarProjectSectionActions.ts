@@ -4,23 +4,15 @@ import { useState } from "react";
 import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
 import { useOpenNewWorkspaceModal } from "renderer/stores/new-workspace-modal";
-import type {
-	DashboardSidebarSection,
-	DashboardSidebarWorkspace,
-} from "../../../../types";
+import type { DashboardSidebarProject } from "../../../../types";
+import { getProjectChildrenWorkspaces } from "../../../../utils/projectChildren";
 
 interface UseDashboardSidebarProjectSectionActionsOptions {
-	projectId: string;
-	projectName: string;
-	workspaces: DashboardSidebarWorkspace[];
-	sections: DashboardSidebarSection[];
+	project: DashboardSidebarProject;
 }
 
 export function useDashboardSidebarProjectSectionActions({
-	projectId,
-	projectName,
-	workspaces,
-	sections,
+	project,
 }: UseDashboardSidebarProjectSectionActionsOptions) {
 	const openModal = useOpenNewWorkspaceModal();
 	const navigate = useNavigate();
@@ -34,27 +26,27 @@ export function useDashboardSidebarProjectSectionActions({
 	} = useDashboardSidebarState();
 
 	const [isRenaming, setIsRenaming] = useState(false);
-	const [renameValue, setRenameValue] = useState(projectName);
+	const [renameValue, setRenameValue] = useState(project.name);
 	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 	const [isDeleting, setIsDeleting] = useState(false);
 
 	const startRename = () => {
-		setRenameValue(projectName);
+		setRenameValue(project.name);
 		setIsRenaming(true);
 	};
 
 	const cancelRename = () => {
 		setIsRenaming(false);
-		setRenameValue(projectName);
+		setRenameValue(project.name);
 	};
 
 	const submitRename = async () => {
 		setIsRenaming(false);
 		const trimmed = renameValue.trim();
-		if (!trimmed || trimmed === projectName) return;
+		if (!trimmed || trimmed === project.name) return;
 		try {
 			await apiTrpcClient.v2Project.update.mutate({
-				id: projectId,
+				id: project.id,
 				name: trimmed,
 				slug: trimmed.toLowerCase().replace(/\s+/g, "-"),
 			});
@@ -68,15 +60,12 @@ export function useDashboardSidebarProjectSectionActions({
 	const handleDelete = async () => {
 		setIsDeleting(true);
 		try {
-			await apiTrpcClient.v2Project.delete.mutate({ id: projectId });
-			removeProjectFromSidebar(projectId);
+			await apiTrpcClient.v2Project.delete.mutate({ id: project.id });
+			removeProjectFromSidebar(project.id);
 			setIsDeleteDialogOpen(false);
 			toast.success("Project deleted");
 
-			const isInProject = [
-				...workspaces,
-				...sections.flatMap((s) => s.workspaces),
-			].some(
+			const isInProject = getProjectChildrenWorkspaces(project.children).some(
 				(workspace) =>
 					!!matchRoute({
 						to: "/v2-workspace/$workspaceId",
@@ -97,11 +86,11 @@ export function useDashboardSidebarProjectSectionActions({
 	};
 
 	const handleNewWorkspace = () => {
-		openModal(projectId);
+		openModal(project.id);
 	};
 
 	const handleNewSection = () => {
-		createSection(projectId);
+		createSection(project.id);
 	};
 
 	return {
