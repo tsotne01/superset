@@ -1,10 +1,12 @@
 import { cn } from "@superset/ui/utils";
 import { type ComponentPropsWithoutRef, forwardRef } from "react";
 import type { ActivePaneStatus } from "shared/tabs-types";
+import type { DashboardSidebarWorkspaceHostType } from "../../../../types";
 import { DashboardSidebarWorkspaceIcon } from "../DashboardSidebarWorkspaceIcon";
 
 interface DashboardSidebarCollapsedWorkspaceButtonProps
 	extends ComponentPropsWithoutRef<"button"> {
+	hostType: DashboardSidebarWorkspaceHostType;
 	isActive: boolean;
 	isDragging: boolean;
 	isUnread?: boolean;
@@ -18,6 +20,7 @@ export const DashboardSidebarCollapsedWorkspaceButton = forwardRef<
 >(
 	(
 		{
+			hostType,
 			isActive,
 			isDragging,
 			isUnread = false,
@@ -49,6 +52,7 @@ export const DashboardSidebarCollapsedWorkspaceButton = forwardRef<
 				{...props}
 			>
 				<DashboardSidebarWorkspaceIcon
+					hostType={hostType}
 					isActive={isActive}
 					isUnread={isUnread}
 					variant="collapsed"

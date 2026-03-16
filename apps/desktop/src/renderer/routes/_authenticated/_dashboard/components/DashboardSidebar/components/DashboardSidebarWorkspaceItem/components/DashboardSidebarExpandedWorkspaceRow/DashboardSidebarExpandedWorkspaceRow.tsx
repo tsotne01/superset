@@ -3,6 +3,7 @@ import { cn } from "@superset/ui/utils";
 import { type ComponentPropsWithoutRef, forwardRef } from "react";
 import { HiMiniXMark } from "react-icons/hi2";
 import { RenameInput } from "renderer/screens/main/components/WorkspaceSidebar/RenameInput";
+import type { DashboardSidebarWorkspaceHostType } from "../../../../types";
 import type { WorkspaceRowMockData } from "../../utils";
 import { DashboardSidebarWorkspaceDiffStats } from "../DashboardSidebarWorkspaceDiffStats";
 import { DashboardSidebarWorkspaceIcon } from "../DashboardSidebarWorkspaceIcon";
@@ -11,6 +12,7 @@ import { DashboardSidebarWorkspaceStatusBadge } from "../DashboardSidebarWorkspa
 interface DashboardSidebarExpandedWorkspaceRowProps
 	extends ComponentPropsWithoutRef<"div"> {
 	accentColor?: string | null;
+	hostType: DashboardSidebarWorkspaceHostType;
 	name: string;
 	branch: string;
 	isActive: boolean;
@@ -35,6 +37,7 @@ export const DashboardSidebarExpandedWorkspaceRow = forwardRef<
 	(
 		{
 			accentColor = null,
+			hostType,
 			name,
 			branch,
 			isActive,
@@ -109,6 +112,7 @@ export const DashboardSidebarExpandedWorkspaceRow = forwardRef<
 					<TooltipTrigger asChild>
 						<div className="relative mr-2.5 flex size-5 shrink-0 items-center justify-center">
 							<DashboardSidebarWorkspaceIcon
+								hostType={hostType}
 								isActive={isActive}
 								isUnread={mockData.isUnread}
 								variant="expanded"

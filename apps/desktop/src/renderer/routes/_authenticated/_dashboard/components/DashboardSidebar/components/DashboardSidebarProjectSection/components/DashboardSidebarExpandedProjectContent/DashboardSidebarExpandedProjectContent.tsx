@@ -48,6 +48,7 @@ export function DashboardSidebarExpandedProjectContent({
 								id={workspace.id}
 								projectId={projectId}
 								accentColor={null}
+								hostType={workspace.hostType}
 								name={workspace.name}
 								branch={workspace.branch}
 								index={index}

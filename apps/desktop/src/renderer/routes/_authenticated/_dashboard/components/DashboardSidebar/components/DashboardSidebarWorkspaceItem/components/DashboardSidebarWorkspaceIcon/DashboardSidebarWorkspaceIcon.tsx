@@ -1,10 +1,12 @@
 import { cn } from "@superset/ui/utils";
-import { LuFolderGit2 } from "react-icons/lu";
+import { LuCloud, LuFolderGit2, LuLaptop } from "react-icons/lu";
 import { AsciiSpinner } from "renderer/screens/main/components/AsciiSpinner";
 import { StatusIndicator } from "renderer/screens/main/components/StatusIndicator";
 import type { ActivePaneStatus } from "shared/tabs-types";
+import type { DashboardSidebarWorkspaceHostType } from "../../../../types";
 
 interface DashboardSidebarWorkspaceIconProps {
+	hostType: DashboardSidebarWorkspaceHostType;
 	isActive: boolean;
 	isUnread?: boolean;
 	variant: "collapsed" | "expanded";
@@ -17,6 +19,7 @@ const OVERLAY_POSITION = {
 } as const;
 
 export function DashboardSidebarWorkspaceIcon({
+	hostType,
 	isActive,
 	isUnread = false,
 	variant,
@@ -28,6 +31,24 @@ export function DashboardSidebarWorkspaceIcon({
 		<>
 			{workspaceStatus === "working" ? (
 				<AsciiSpinner className="text-base" />
+			) : hostType === "cloud" ? (
+				<LuCloud
+					className={cn(
+						"size-4 transition-colors",
+						variant === "expanded" && "transition-colors",
+						isActive ? "text-foreground" : "text-muted-foreground",
+					)}
+					strokeWidth={1.75}
+				/>
+			) : hostType === "remote-device" ? (
+				<LuLaptop
+					className={cn(
+						"size-4 transition-colors",
+						variant === "expanded" && "transition-colors",
+						isActive ? "text-foreground" : "text-muted-foreground",
+					)}
+					strokeWidth={1.75}
+				/>
 			) : (
 				<LuFolderGit2
 					className={cn(

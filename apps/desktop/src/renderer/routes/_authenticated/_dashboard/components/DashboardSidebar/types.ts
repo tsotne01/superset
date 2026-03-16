@@ -1,7 +1,13 @@
+export type DashboardSidebarWorkspaceHostType =
+	| "local-device"
+	| "remote-device"
+	| "cloud";
+
 export interface DashboardSidebarWorkspace {
 	id: string;
 	projectId: string;
 	deviceId: string;
+	hostType: DashboardSidebarWorkspaceHostType;
 	name: string;
 	branch: string;
 	createdAt: Date;

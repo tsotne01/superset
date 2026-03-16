@@ -6,6 +6,11 @@ import type {
 
 interface BuildDashboardSidebarProjectsOptions {
 	githubRepos: Array<{ id: string; owner: string }>;
+	currentDeviceId: string | null;
+	devices: Array<{
+		id: string;
+		type: "host" | "cloud" | "viewer";
+	}>;
 	projects: Array<{
 		id: string;
 		name: string;
@@ -47,6 +52,8 @@ interface BuildDashboardSidebarProjectsOptions {
 
 export function buildDashboardSidebarProjects({
 	githubRepos,
+	currentDeviceId,
+	devices,
 	projects,
 	sidebarProjects,
 	sidebarSections,
@@ -61,6 +68,7 @@ export function buildDashboardSidebarProjects({
 	const cloudProjectsById = new Map(
 		projects.map((project) => [project.id, project]),
 	);
+	const devicesById = new Map(devices.map((device) => [device.id, device]));
 	const cloudWorkspacesById = new Map(
 		workspaces.map((workspace) => [workspace.id, workspace]),
 	);
@@ -94,11 +102,19 @@ export function buildDashboardSidebarProjects({
 	for (const localWorkspace of sidebarWorkspaces) {
 		const workspace = cloudWorkspacesById.get(localWorkspace.workspaceId);
 		if (!workspace) continue;
+		const device = devicesById.get(workspace.deviceId);
+		const hostType =
+			device?.type === "cloud"
+				? "cloud"
+				: workspace.deviceId === currentDeviceId
+					? "local-device"
+					: "remote-device";
 
 		const sidebarWorkspace: DashboardSidebarWorkspace = {
 			id: workspace.id,
 			projectId: workspace.projectId,
 			deviceId: workspace.deviceId,
+			hostType,
 			name: workspace.name,
 			branch: workspace.branch,
 			createdAt: workspace.createdAt,

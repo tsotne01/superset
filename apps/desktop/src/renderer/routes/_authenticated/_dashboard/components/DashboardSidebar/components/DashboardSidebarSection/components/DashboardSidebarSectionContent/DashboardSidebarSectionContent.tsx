@@ -27,7 +27,7 @@ export function DashboardSidebarSectionContent({
 					transition={{ duration: 0.15, ease: "easeOut" }}
 					className="overflow-hidden"
 				>
-					<div className="pb-1">
+					<div>
 						{section.workspaces.map((workspace, index) => (
 							<DashboardSidebarWorkspaceItem
 								accentColor={section.color}
@@ -35,6 +35,7 @@ export function DashboardSidebarSectionContent({
 								id={workspace.id}
 								projectId={projectId}
 								sectionId={section.id}
+								hostType={workspace.hostType}
 								name={workspace.name}
 								branch={workspace.branch}
 								index={index}

@@ -93,6 +93,7 @@ export const DashboardSidebarCollapsedProjectContent = forwardRef<
 										key={workspace.id}
 										id={workspace.id}
 										projectId={projectId}
+										hostType={workspace.hostType}
 										name={workspace.name}
 										branch={workspace.branch}
 										index={index}

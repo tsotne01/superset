@@ -15,6 +15,7 @@ interface DashboardSidebarWorkspaceItemProps {
 	projectId: string;
 	accentColor?: string | null;
 	sectionId?: string | null;
+	hostType: "local-device" | "remote-device" | "cloud";
 	name: string;
 	branch: string;
 	index: number;
@@ -29,6 +30,7 @@ export function DashboardSidebarWorkspaceItem({
 	projectId,
 	accentColor = null,
 	sectionId = null,
+	hostType,
 	name,
 	branch,
 	index,
@@ -93,6 +95,7 @@ export function DashboardSidebarWorkspaceItem({
 					<Tooltip delayDuration={300}>
 						<TooltipTrigger asChild>
 							<DashboardSidebarCollapsedWorkspaceButton
+								hostType={hostType}
 								isActive={isActive}
 								isDragging={isDragging}
 								isUnread={mockData.isUnread}
@@ -147,6 +150,7 @@ export function DashboardSidebarWorkspaceItem({
 			>
 				<DashboardSidebarExpandedWorkspaceRow
 					accentColor={accentColor}
+					hostType={hostType}
 					name={name}
 					branch={branch}
 					isActive={isActive}

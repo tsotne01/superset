@@ -1,5 +1,6 @@
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
+import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import type { DashboardSidebarProject } from "../../types";
@@ -8,6 +9,7 @@ import { buildDashboardSidebarProjects } from "./utils";
 export function useDashboardSidebarData() {
 	const collections = useCollections();
 	const { toggleProjectCollapsed } = useDashboardSidebarState();
+	const { data: deviceInfo } = electronTrpc.auth.getDeviceInfo.useQuery();
 
 	const { data: sidebarProjects = [] } = useLiveQuery(
 		(q) => q.from({ sidebarProjects: collections.v2SidebarProjects }),
@@ -34,6 +36,20 @@ export function useDashboardSidebarData() {
 		[collections],
 	);
 
+	const { data: devices = [] } = useLiveQuery(
+		(q) =>
+			q.from({ v2Devices: collections.v2Devices }).select(({ v2Devices }) => ({
+				id: v2Devices.id,
+				clientId: v2Devices.clientId,
+				type: v2Devices.type,
+			})),
+		[collections],
+	);
+
+	const currentDeviceId =
+		devices.find((device) => device.clientId === deviceInfo?.deviceId)?.id ??
+		null;
+
 	const { data: githubRepos = [] } = useLiveQuery(
 		(q) =>
 			q.from({ repos: collections.githubRepositories }).select(({ repos }) => ({
@@ -45,6 +61,8 @@ export function useDashboardSidebarData() {
 
 	const groups = useMemo<DashboardSidebarProject[]>(() => {
 		return buildDashboardSidebarProjects({
+			currentDeviceId,
+			devices,
 			githubRepos,
 			projects,
 			sidebarProjects,
@@ -54,6 +72,8 @@ export function useDashboardSidebarData() {
 		});
 	}, [
 		githubRepos,
+		currentDeviceId,
+		devices,
 		projects,
 		sidebarProjects,
 		sidebarSections,
