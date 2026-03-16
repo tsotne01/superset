@@ -16,6 +16,12 @@ const FALLBACK_CACHE_TTL_MS = 10_000; // 10 second cache for fallback (retry soo
 const TIMEOUT_FALLBACK_CACHE_TTL_MS = 60_000; // 1 minute fallback when shell startup hangs
 const SHELL_ENV_TIMEOUT_MS = 8_000;
 let fallbackCacheTtlMs = FALLBACK_CACHE_TTL_MS;
+const COMMON_MACOS_PATHS = [
+	"/opt/homebrew/bin",
+	"/opt/homebrew/sbin",
+	"/usr/local/bin",
+	"/usr/local/sbin",
+];
 
 // Track PATH fix state for macOS GUI app PATH fix
 let pathFixAttempted = false;
@@ -84,6 +90,7 @@ export async function getShellEnvironment(
 				fallback[key] = value;
 			}
 		}
+		augmentPathForMacOS(fallback);
 		cachedEnv = fallback;
 		cacheTime = now;
 		isFallbackCache = true;
@@ -92,6 +99,27 @@ export async function getShellEnvironment(
 			: FALLBACK_CACHE_TTL_MS;
 		return { ...fallback };
 	}
+}
+
+/**
+ * On macOS, GUI apps get a minimal PATH that may exclude Homebrew and other
+ * user-installed tool directories. Augment with well-known locations so git
+ * and similar binaries can be found even during fallback.
+ */
+export function augmentPathForMacOS(
+	env: Record<string, string>,
+	platform: NodeJS.Platform = process.platform,
+): void {
+	if (platform !== "darwin") return;
+
+	const currentPath = env.PATH ?? "";
+	const currentEntries = currentPath.split(":").filter(Boolean);
+	const pathEntries = new Set(currentEntries);
+	const missingPaths = COMMON_MACOS_PATHS.filter(
+		(path) => !pathEntries.has(path),
+	);
+
+	env.PATH = [...missingPaths, currentPath].filter(Boolean).join(":");
 }
 
 /**
