@@ -57,11 +57,6 @@ export const DashboardSidebarExpandedWorkspaceRow = forwardRef<
 		const showBranchSubtitle = !!name && name !== branch;
 		const showSubtitle = showBranchSubtitle || !!mockData.pr;
 		const showsStandaloneActiveStripe = accentColor == null;
-		const activeAccentStyle = isActive
-			? {
-					backgroundColor: "var(--color-foreground)",
-				}
-			: undefined;
 
 		return (
 			// biome-ignore lint/a11y/useSemanticElements: Mirrors the legacy sidebar row UI, which includes nested action buttons.
@@ -86,13 +81,10 @@ export const DashboardSidebarExpandedWorkspaceRow = forwardRef<
 				)}
 				{...props}
 			>
-				{isActive && (
+				{isActive && showsStandaloneActiveStripe && (
 					<div
-						className={cn(
-							"absolute top-0 bottom-0 w-0.5 rounded-r",
-							showsStandaloneActiveStripe ? "left-0" : "-left-0.5",
-						)}
-						style={activeAccentStyle}
+						className="absolute top-0 bottom-0 left-0 w-0.5 rounded-r"
+						style={{ backgroundColor: "var(--color-foreground)" }}
 					/>
 				)}
 
@@ -102,7 +94,6 @@ export const DashboardSidebarExpandedWorkspaceRow = forwardRef<
 							<DashboardSidebarWorkspaceIcon
 								hostType={hostType}
 								isActive={isActive}
-								isUnread={mockData.isUnread}
 								variant="expanded"
 								workspaceStatus={mockData.workspaceStatus}
 							/>
@@ -126,7 +117,7 @@ export const DashboardSidebarExpandedWorkspaceRow = forwardRef<
 									onSubmit={onSubmitRename}
 									onCancel={onCancelRename}
 									className={cn(
-										"h-6 w-full -ml-1 border-none bg-transparent px-1 py-0 text-[13px] leading-tight outline-none",
+										"h-5 w-full -ml-1 border-none bg-transparent px-1 py-0 text-[13px] leading-tight outline-none",
 										!showBranchSubtitle && "row-span-2 self-center",
 									)}
 								/>
@@ -199,7 +190,7 @@ export const DashboardSidebarExpandedWorkspaceRow = forwardRef<
 									onChange={onRenameValueChange}
 									onSubmit={onSubmitRename}
 									onCancel={onCancelRename}
-									className="h-6 w-full flex-1 -ml-1 border-none bg-transparent px-1 py-0 text-[13px] leading-tight outline-none"
+									className="h-5 w-full flex-1 -ml-1 border-none bg-transparent px-1 py-0 text-[13px] leading-tight outline-none"
 								/>
 							) : (
 								<span

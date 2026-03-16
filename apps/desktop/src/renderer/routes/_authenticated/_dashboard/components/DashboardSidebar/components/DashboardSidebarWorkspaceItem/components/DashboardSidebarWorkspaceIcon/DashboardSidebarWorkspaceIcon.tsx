@@ -8,7 +8,6 @@ import type { DashboardSidebarWorkspaceHostType } from "../../../../types";
 interface DashboardSidebarWorkspaceIconProps {
 	hostType: DashboardSidebarWorkspaceHostType;
 	isActive: boolean;
-	isUnread?: boolean;
 	variant: "collapsed" | "expanded";
 	workspaceStatus?: ActivePaneStatus | null;
 }
@@ -21,7 +20,6 @@ const OVERLAY_POSITION = {
 export function DashboardSidebarWorkspaceIcon({
 	hostType,
 	isActive,
-	isUnread = false,
 	variant,
 	workspaceStatus = null,
 }: DashboardSidebarWorkspaceIconProps) {
@@ -62,11 +60,6 @@ export function DashboardSidebarWorkspaceIcon({
 			{workspaceStatus && workspaceStatus !== "working" && (
 				<span className={cn("absolute", overlayPosition)}>
 					<StatusIndicator status={workspaceStatus} />
-				</span>
-			)}
-			{isUnread && !workspaceStatus && (
-				<span className={cn("absolute flex size-2", overlayPosition)}>
-					<span className="relative inline-flex size-2 rounded-full bg-blue-500" />
 				</span>
 			)}
 		</>

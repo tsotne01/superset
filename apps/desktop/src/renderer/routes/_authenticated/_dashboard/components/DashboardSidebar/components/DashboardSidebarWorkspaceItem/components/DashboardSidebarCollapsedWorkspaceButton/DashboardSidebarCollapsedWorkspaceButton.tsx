@@ -8,7 +8,6 @@ interface DashboardSidebarCollapsedWorkspaceButtonProps
 	extends ComponentPropsWithoutRef<"button"> {
 	hostType: DashboardSidebarWorkspaceHostType;
 	isActive: boolean;
-	isUnread?: boolean;
 	workspaceStatus?: ActivePaneStatus | null;
 }
 
@@ -17,14 +16,7 @@ export const DashboardSidebarCollapsedWorkspaceButton = forwardRef<
 	DashboardSidebarCollapsedWorkspaceButtonProps
 >(
 	(
-		{
-			hostType,
-			isActive,
-			isUnread = false,
-			workspaceStatus = null,
-			className,
-			...props
-		},
+		{ hostType, isActive, workspaceStatus = null, className, ...props },
 		ref,
 	) => {
 		return (
@@ -42,7 +34,6 @@ export const DashboardSidebarCollapsedWorkspaceButton = forwardRef<
 				<DashboardSidebarWorkspaceIcon
 					hostType={hostType}
 					isActive={isActive}
-					isUnread={isUnread}
 					variant="collapsed"
 					workspaceStatus={workspaceStatus}
 				/>

@@ -26,7 +26,7 @@ export function DashboardSidebarSectionContent({
 					<div>
 						{section.workspaces.map((workspace) => (
 							<DashboardSidebarWorkspaceItem
-								accentColor={section.color}
+								accentColor={workspace.accentColor}
 								key={workspace.id}
 								id={workspace.id}
 								projectId={projectId}

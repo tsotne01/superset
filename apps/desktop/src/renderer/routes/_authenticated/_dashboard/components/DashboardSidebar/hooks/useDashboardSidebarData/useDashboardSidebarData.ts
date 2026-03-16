@@ -146,6 +146,7 @@ export function useDashboardSidebarData() {
 				projectId: workspace.projectId,
 				deviceId: workspace.deviceId,
 				hostType,
+				accentColor: null,
 				name: workspace.name,
 				branch: workspace.branch,
 				createdAt: workspace.createdAt,
@@ -153,9 +154,13 @@ export function useDashboardSidebarData() {
 			};
 
 			if (workspace.sectionId) {
-				project.sectionMap
-					.get(workspace.sectionId)
-					?.workspaces.push(sidebarWorkspace);
+				const section = project.sectionMap.get(workspace.sectionId);
+				if (section) {
+					section.workspaces.push({
+						...sidebarWorkspace,
+						accentColor: section.color,
+					});
+				}
 				continue;
 			}
 

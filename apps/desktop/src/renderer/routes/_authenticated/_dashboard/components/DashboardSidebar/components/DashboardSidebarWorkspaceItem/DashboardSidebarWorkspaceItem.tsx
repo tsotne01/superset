@@ -1,4 +1,3 @@
-import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
 import { DashboardSidebarDeleteDialog } from "../DashboardSidebarDeleteDialog";
 import { DashboardSidebarCollapsedWorkspaceButton } from "./components/DashboardSidebarCollapsedWorkspaceButton";
 import { DashboardSidebarExpandedWorkspaceRow } from "./components/DashboardSidebarExpandedWorkspaceRow";
@@ -52,8 +51,6 @@ export function DashboardSidebarWorkspaceItem({
 	});
 
 	if (isCollapsed) {
-		const showBranch = !!name && name !== branch;
-
 		return (
 			<>
 				<DashboardSidebarWorkspaceContextMenu
@@ -73,25 +70,22 @@ export function DashboardSidebarWorkspaceItem({
 					onRename={startRename}
 					onDelete={() => setIsDeleteDialogOpen(true)}
 				>
-					<Tooltip delayDuration={300}>
-						<TooltipTrigger asChild>
-							<DashboardSidebarCollapsedWorkspaceButton
-								hostType={hostType}
-								isActive={isActive}
-								isUnread={mockData.isUnread}
-								onClick={handleClick}
-								workspaceStatus={mockData.workspaceStatus}
+					<div className="relative flex w-full justify-center">
+						{(accentColor || isActive) && (
+							<div
+								className="absolute inset-y-0 left-0 w-0.5"
+								style={{
+									backgroundColor: accentColor ?? "var(--color-foreground)",
+								}}
 							/>
-						</TooltipTrigger>
-						<TooltipContent side="right" className="flex flex-col gap-0.5">
-							<span className="font-medium">{name || branch}</span>
-							{showBranch && (
-								<span className="text-xs text-muted-foreground font-mono">
-									{branch}
-								</span>
-							)}
-						</TooltipContent>
-					</Tooltip>
+						)}
+						<DashboardSidebarCollapsedWorkspaceButton
+							hostType={hostType}
+							isActive={isActive}
+							onClick={handleClick}
+							workspaceStatus={mockData.workspaceStatus}
+						/>
+					</div>
 				</DashboardSidebarWorkspaceContextMenu>
 
 				<DashboardSidebarDeleteDialog

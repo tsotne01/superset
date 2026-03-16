@@ -41,7 +41,7 @@ export function DashboardSidebarExpandedProjectContent({
 									key={child.workspace.id}
 									id={child.workspace.id}
 									projectId={projectId}
-									accentColor={null}
+									accentColor={child.workspace.accentColor}
 									hostType={child.workspace.hostType}
 									name={child.workspace.name}
 									branch={child.workspace.branch}

@@ -8,6 +8,7 @@ export interface DashboardSidebarWorkspace {
 	projectId: string;
 	deviceId: string;
 	hostType: DashboardSidebarWorkspaceHostType;
+	accentColor: string | null;
 	name: string;
 	branch: string;
 	createdAt: Date;

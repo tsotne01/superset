@@ -80,9 +80,10 @@ export const DashboardSidebarCollapsedProjectContent = forwardRef<
 							transition={{ duration: 0.15, ease: "easeOut" }}
 							className="overflow-hidden w-full"
 						>
-							<div className="flex flex-col items-center gap-1 pt-1">
+							<div className="flex w-full flex-col pt-1">
 								{workspaces.map((workspace) => (
 									<DashboardSidebarWorkspaceItem
+										accentColor={workspace.accentColor}
 										key={workspace.id}
 										id={workspace.id}
 										projectId={projectId}

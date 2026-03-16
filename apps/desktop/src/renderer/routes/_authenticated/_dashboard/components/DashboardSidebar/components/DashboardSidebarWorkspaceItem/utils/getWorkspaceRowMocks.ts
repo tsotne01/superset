@@ -7,7 +7,6 @@ export interface WorkspaceRowMockData {
 		additions: number;
 		deletions: number;
 	};
-	isUnread: boolean;
 	workspaceStatus: ActivePaneStatus | null;
 	pr: {
 		state: MockPrState;
@@ -38,7 +37,6 @@ export function getWorkspaceRowMocks(
 			additions: (seed % 24) + 3,
 			deletions: (seed % 9) + 1,
 		},
-		isUnread: !status && seed % 4 === 0,
 		workspaceStatus: status,
 		pr: hasPr
 			? {
