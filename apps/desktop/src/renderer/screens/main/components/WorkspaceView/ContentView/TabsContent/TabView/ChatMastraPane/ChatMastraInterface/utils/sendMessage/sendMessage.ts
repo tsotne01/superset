@@ -1,5 +1,7 @@
 import type { StartFreshSessionResult } from "../../../../ChatPane/ChatInterface/types";
 
+export type ThinkingLevel = "off" | "low" | "medium" | "high" | "xhigh";
+
 export type ChatSendMessageInput = {
 	payload: {
 		content: string;
@@ -11,6 +13,7 @@ export type ChatSendMessageInput = {
 	};
 	metadata: {
 		model?: string;
+		thinkingLevel?: ThinkingLevel;
 	};
 };
 

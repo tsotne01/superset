@@ -61,6 +61,7 @@ interface RuntimeRestartPayload {
 	};
 	metadata?: {
 		model?: string;
+		thinkingLevel?: "off" | "low" | "medium" | "high" | "xhigh";
 	};
 }
 
@@ -414,6 +415,11 @@ export async function restartRuntimeFromUserMessage(
 			modelId: selectedModel,
 			scope: "thread",
 		});
+	}
+
+	const thinkingLevel = input.metadata?.thinkingLevel;
+	if (thinkingLevel) {
+		await runtime.harness.setState({ thinkingLevel });
 	}
 
 	runtime.lastErrorMessage = null;
