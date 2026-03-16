@@ -716,8 +716,8 @@ function PromptGroupInner({
 				<div className="shrink-0 ml-auto">
 					<Input
 						className="border-none bg-transparent text-xs font-mono text-muted-foreground/60 px-0 h-auto focus-visible:ring-0 placeholder:text-muted-foreground/30 focus:text-muted-foreground text-right w-[160px] placeholder:text-right"
-						placeholder={branchPreview || "branch-name"}
-						value={branchNameEdited ? branchName : ""}
+						placeholder="branch-name"
+						value={branchNameEdited ? branchName : (branchPreview || "")}
 						onChange={(e) =>
 							updateDraft({
 								branchName: e.target.value.replace(/\s+/g, "-"),
