@@ -295,13 +295,15 @@ function BaseBranchPickerInline({
 				<button
 					type="button"
 					disabled={isBranchesLoading}
-					className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+					className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 min-w-0 max-w-full"
 				>
 					<GoGitBranch className="size-3 shrink-0" />
 					{isBranchesLoading ? (
 						<span className="h-2.5 w-14 rounded-sm bg-muted-foreground/15 animate-pulse" />
 					) : (
-						<span className="font-mono">{effectiveBaseBranch || "..."}</span>
+						<span className="font-mono truncate">
+							{effectiveBaseBranch || "..."}
+						</span>
 					)}
 					<HiChevronUpDown className="size-3 shrink-0" />
 				</button>
@@ -857,8 +859,8 @@ function PromptGroupInner({
 				</PromptInputFooter>
 			</PromptInput>
 
-			<div className="flex items-center justify-between">
-				<div className="flex items-center gap-2">
+			<div className="flex items-center justify-between gap-2">
+				<div className="flex items-center gap-2 min-w-0 flex-1">
 					<ProjectPickerPill
 						selectedProject={selectedProject}
 						recentProjects={recentProjects}
@@ -882,6 +884,7 @@ function PromptGroupInner({
 						) : (
 							<motion.div
 								key="branch-picker"
+								className="min-w-0"
 								initial={{ opacity: 0, x: -8, filter: "blur(4px)" }}
 								animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
 								exit={{ opacity: 0, x: 8, filter: "blur(4px)" }}
