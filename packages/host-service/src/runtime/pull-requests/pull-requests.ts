@@ -116,8 +116,6 @@ export class PullRequestRuntimeManager {
 			.where(inArray(workspaces.id, workspaceIds))
 			.all();
 
-		void this.requestWorkspaceRefresh(workspaceIds);
-
 		return rows.map((row) => ({
 			workspaceId: row.workspaceId,
 			pullRequest:
@@ -141,21 +139,6 @@ export class PullRequestRuntimeManager {
 				? new Date(row.pullRequestLastFetchedAt).toISOString()
 				: null,
 		}));
-	}
-
-	async requestWorkspaceRefresh(workspaceIds: string[]): Promise<void> {
-		if (workspaceIds.length === 0) return;
-
-		const rows = this.db
-			.select({
-				projectId: workspaces.projectId,
-			})
-			.from(workspaces)
-			.where(inArray(workspaces.id, workspaceIds))
-			.all();
-
-		const projectIds = [...new Set(rows.map((row) => row.projectId))];
-		await Promise.all(projectIds.map((projectId) => this.refreshProject(projectId)));
 	}
 
 	private async syncWorkspaceBranches(): Promise<void> {

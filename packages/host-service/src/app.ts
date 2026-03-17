@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { createNodeWebSocket } from "@hono/node-ws";
 import { trpcServer } from "@hono/trpc-server";
 import { Octokit } from "@octokit/rest";
 import { Hono } from "hono";
@@ -11,6 +12,7 @@ import { createGitFactory } from "./git/createGitFactory";
 import { LocalCredentialProvider } from "./git/providers";
 import type { CredentialProvider } from "./git/types";
 import { PullRequestRuntimeManager } from "./runtime/pull-requests";
+import { registerWorkspaceTerminalRoute } from "./terminal/terminal";
 import { appRouter } from "./trpc/router";
 
 export interface CreateAppOptions {
@@ -22,7 +24,12 @@ export interface CreateAppOptions {
 	deviceName?: string;
 }
 
-export function createApp(options?: CreateAppOptions) {
+export interface CreateAppResult {
+	app: Hono;
+	injectWebSocket: ReturnType<typeof createNodeWebSocket>["injectWebSocket"];
+}
+
+export function createApp(options?: CreateAppOptions): CreateAppResult {
 	const credentials = options?.credentials ?? new LocalCredentialProvider();
 
 	const api =
@@ -53,7 +60,13 @@ export function createApp(options?: CreateAppOptions) {
 		pullRequests: pullRequestRuntime,
 	};
 	const app = new Hono();
+	const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 	app.use("*", cors());
+	registerWorkspaceTerminalRoute({
+		app,
+		db,
+		upgradeWebSocket,
+	});
 	app.use(
 		"/trpc/*",
 		trpcServer({
@@ -71,5 +84,5 @@ export function createApp(options?: CreateAppOptions) {
 		}),
 	);
 
-	return app;
+	return { app, injectWebSocket };
 }
