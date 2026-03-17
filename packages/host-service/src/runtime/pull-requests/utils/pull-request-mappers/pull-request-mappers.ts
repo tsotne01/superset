@@ -1,4 +1,7 @@
-import type { GraphQLCheckContextNode, GraphQLPullRequestNode } from "../github-query";
+import type {
+	GraphQLCheckContextNode,
+	GraphQLPullRequestNode,
+} from "../github-query";
 
 export type PullRequestState = "open" | "draft" | "merged" | "closed";
 export type ReviewDecision =
@@ -7,12 +10,7 @@ export type ReviewDecision =
 	| "pending"
 	| null;
 export type ChecksStatus = "success" | "failure" | "pending" | "none";
-type CheckStatus =
-	| "success"
-	| "failure"
-	| "pending"
-	| "skipped"
-	| "cancelled";
+type CheckStatus = "success" | "failure" | "pending" | "skipped" | "cancelled";
 
 export interface PullRequestCheck {
 	name: string;
@@ -42,14 +40,17 @@ export function mapReviewDecision(
 export function parseCheckContexts(
 	nodes: GraphQLCheckContextNode[],
 ): PullRequestCheck[] {
-	return nodes
-		.filter((node): node is NonNullable<GraphQLCheckContextNode> => node !== null)
+	const checks = nodes
+		.filter(
+			(node): node is NonNullable<GraphQLCheckContextNode> => node !== null,
+		)
 		.map((node) => {
 			if (node.__typename === "CheckRun") {
 				return {
 					name: node.name,
 					status: mapCheckRunStatus(node.status, node.conclusion),
 					url: node.detailsUrl,
+					recency: getCheckRunRecency(node),
 				};
 			}
 
@@ -57,8 +58,26 @@ export function parseCheckContexts(
 				name: node.context,
 				status: mapStatusContextState(node.state),
 				url: node.targetUrl,
+				recency: getStatusContextRecency(node),
 			};
 		});
+
+	const dedupedChecks = new Map<
+		string,
+		PullRequestCheck & {
+			recency: number;
+		}
+	>();
+	for (const check of checks) {
+		const existing = dedupedChecks.get(check.name);
+		if (!existing || check.recency > existing.recency) {
+			dedupedChecks.set(check.name, check);
+		}
+	}
+
+	return [...dedupedChecks.values()].map(
+		({ recency: _recency, ...check }) => check,
+	);
 }
 
 export function computeChecksStatus(checks: PullRequestCheck[]): ChecksStatus {
@@ -68,9 +87,7 @@ export function computeChecksStatus(checks: PullRequestCheck[]): ChecksStatus {
 	return "success";
 }
 
-export function coercePullRequestState(
-	value: string | null,
-): PullRequestState {
+export function coercePullRequestState(value: string | null): PullRequestState {
 	if (value === "merged" || value === "closed" || value === "draft") {
 		return value;
 	}
@@ -78,7 +95,11 @@ export function coercePullRequestState(
 }
 
 export function coerceReviewDecision(value: string | null): ReviewDecision {
-	if (value === "approved" || value === "changes_requested" || value === "pending") {
+	if (
+		value === "approved" ||
+		value === "changes_requested" ||
+		value === "pending"
+	) {
 		return value;
 	}
 	return null;
@@ -147,4 +168,32 @@ function mapStatusContextState(state: string): CheckStatus {
 		default:
 			return "pending";
 	}
+}
+
+function getCheckRunRecency(
+	node: Extract<GraphQLCheckContextNode, { __typename: "CheckRun" }>,
+): number {
+	const workflowRunId = node.checkSuite?.workflowRun?.databaseId;
+	if (typeof workflowRunId === "number") {
+		return workflowRunId;
+	}
+
+	const timestamp = node.completedAt ?? node.startedAt;
+	if (!timestamp) {
+		return 0;
+	}
+
+	const time = Date.parse(timestamp);
+	return Number.isNaN(time) ? 0 : time;
+}
+
+function getStatusContextRecency(
+	node: Extract<GraphQLCheckContextNode, { __typename: "StatusContext" }>,
+): number {
+	if (!node.createdAt) {
+		return 0;
+	}
+
+	const time = Date.parse(node.createdAt);
+	return Number.isNaN(time) ? 0 : time;
 }

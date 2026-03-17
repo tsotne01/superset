@@ -35,8 +35,9 @@ export function WorkspaceTerminal({ workspaceId }: WorkspaceTerminalProps) {
 	const websocketUrl = useMemo(() => {
 		const url = new URL(`/terminal/${workspaceId}`, hostUrl);
 		url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+		url.searchParams.set("reconnect", String(reconnectKey));
 		return url.toString();
-	}, [hostUrl, workspaceId]);
+	}, [hostUrl, reconnectKey, workspaceId]);
 
 	useEffect(() => {
 		const container = containerRef.current;
@@ -139,7 +140,7 @@ export function WorkspaceTerminal({ workspaceId }: WorkspaceTerminalProps) {
 			socket.close();
 			terminal.dispose();
 		};
-	}, [reconnectKey, websocketUrl]);
+	}, [websocketUrl]);
 
 	return (
 		<div className="w-full rounded-lg border border-border p-4">

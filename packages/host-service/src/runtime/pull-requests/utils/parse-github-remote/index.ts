@@ -1,4 +1,4 @@
 export {
-	parseGitHubRemote,
 	type ParsedGitHubRemote,
+	parseGitHubRemote,
 } from "./parse-github-remote";

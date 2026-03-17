@@ -4,6 +4,13 @@ export interface GraphQLCheckRunNode {
 	conclusion: string | null;
 	detailsUrl: string | null;
 	status: string;
+	startedAt: string | null;
+	completedAt: string | null;
+	checkSuite: {
+		workflowRun: {
+			databaseId: number | null;
+		} | null;
+	} | null;
 }
 
 export interface GraphQLStatusContextNode {
@@ -11,6 +18,7 @@ export interface GraphQLStatusContextNode {
 	context: string;
 	state: string;
 	targetUrl: string | null;
+	createdAt: string | null;
 }
 
 export type GraphQLCheckContextNode =

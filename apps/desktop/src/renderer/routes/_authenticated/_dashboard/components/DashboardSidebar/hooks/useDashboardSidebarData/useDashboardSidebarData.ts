@@ -1,7 +1,7 @@
 import { eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { env } from "renderer/env.renderer";
 import { authClient } from "renderer/lib/auth-client";
 import { electronTrpc } from "renderer/lib/electron-trpc";
@@ -50,6 +50,7 @@ export function useDashboardSidebarData() {
 					slug: projects.slug,
 					githubRepositoryId: projects.githubRepositoryId,
 					githubOwner: repos?.owner ?? null,
+					githubRepoName: repos?.name ?? null,
 					createdAt: projects.createdAt,
 					updatedAt: projects.updatedAt,
 					isCollapsed: sidebarProjects.isCollapsed,
@@ -117,7 +118,7 @@ export function useDashboardSidebarData() {
 		[deviceInfo?.deviceId, sidebarWorkspaces],
 	);
 
-	const { data: pullRequestData } = useQuery({
+	const { data: pullRequestData, refetch: refetchPullRequests } = useQuery({
 		queryKey: [
 			"dashboard-sidebar",
 			"pull-requests",
@@ -125,12 +126,26 @@ export function useDashboardSidebarData() {
 			localWorkspaceIds,
 		],
 		enabled: activeHostService !== null && localWorkspaceIds.length > 0,
-		refetchInterval: 30_000,
+		refetchInterval: 15_000,
 		queryFn: () =>
 			activeHostService?.client.pullRequests.getByWorkspaces.query({
 				workspaceIds: localWorkspaceIds,
 			}) ?? Promise.resolve({ workspaces: [] }),
 	});
+
+	const refreshWorkspacePullRequest = useCallback(
+		async (workspaceId: string) => {
+			if (!activeHostService || !localWorkspaceIds.includes(workspaceId)) {
+				return;
+			}
+
+			await activeHostService.client.pullRequests.refreshByWorkspaces.mutate({
+				workspaceIds: [workspaceId],
+			});
+			await refetchPullRequests();
+		},
+		[activeHostService, localWorkspaceIds, refetchPullRequests],
+	);
 
 	const localPullRequestsByWorkspaceId = useMemo(
 		() =>
@@ -206,6 +221,15 @@ export function useDashboardSidebarData() {
 					hostType === "local-device"
 						? (localPullRequestsByWorkspaceId.get(workspace.id) ?? null)
 						: null,
+				repoUrl:
+					project.githubOwner && project.githubRepoName
+						? `https://github.com/${project.githubOwner}/${project.githubRepoName}`
+						: null,
+				branchExistsOnRemote:
+					project.githubOwner !== null && project.githubRepoName !== null,
+				previewUrl: null,
+				needsRebase: null,
+				behindCount: null,
 				createdAt: workspace.createdAt,
 				updatedAt: workspace.updatedAt,
 			};
@@ -253,6 +277,8 @@ export function useDashboardSidebarData() {
 
 	return {
 		groups,
+		refetchPullRequests,
+		refreshWorkspacePullRequest,
 		toggleProjectCollapsed,
 	};
 }

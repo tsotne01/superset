@@ -1,28 +1,28 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
 import type { Octokit } from "@octokit/rest";
+import { and, eq, inArray } from "drizzle-orm";
 import type { HostDb } from "../../db";
 import { projects, pullRequests, workspaces } from "../../db/schema";
 import type { GitFactory } from "../../git/types";
 import { fetchRepositoryPullRequests } from "./utils/github-query";
 import { parseGitHubRemote } from "./utils/parse-github-remote";
 import {
+	type ChecksStatus,
 	coerceChecksStatus,
 	coercePullRequestState,
 	coerceReviewDecision,
 	computeChecksStatus,
 	mapPullRequestState,
 	mapReviewDecision,
-	parseCheckContexts,
-	parseChecksJson,
-	type ChecksStatus,
 	type PullRequestCheck,
 	type PullRequestState,
+	parseCheckContexts,
+	parseChecksJson,
 	type ReviewDecision,
 } from "./utils/pull-request-mappers";
 
 const BRANCH_SYNC_INTERVAL_MS = 10_000;
-const PROJECT_REFRESH_INTERVAL_MS = 30_000;
+const PROJECT_REFRESH_INTERVAL_MS = 15_000;
 
 type RepoProvider = "github";
 
@@ -141,6 +141,23 @@ export class PullRequestRuntimeManager {
 		}));
 	}
 
+	async refreshPullRequestsByWorkspaces(workspaceIds: string[]): Promise<void> {
+		if (workspaceIds.length === 0) return;
+
+		const rows = this.db
+			.select({
+				projectId: workspaces.projectId,
+			})
+			.from(workspaces)
+			.where(inArray(workspaces.id, workspaceIds))
+			.all();
+
+		const projectIds = [...new Set(rows.map((row) => row.projectId))];
+		await Promise.all(
+			projectIds.map((projectId) => this.refreshProject(projectId, true)),
+		);
+	}
+
 	private async syncWorkspaceBranches(): Promise<void> {
 		const allWorkspaces = this.db.select().from(workspaces).all();
 		const changedProjectIds = new Set<string>();
@@ -182,7 +199,9 @@ export class PullRequestRuntimeManager {
 		}
 
 		await Promise.all(
-			[...changedProjectIds].map((projectId) => this.refreshProject(projectId, true)),
+			[...changedProjectIds].map((projectId) =>
+				this.refreshProject(projectId, true),
+			),
 		);
 	}
 
@@ -199,7 +218,10 @@ export class PullRequestRuntimeManager {
 		);
 	}
 
-	private async refreshProject(projectId: string, force = false): Promise<void> {
+	private async refreshProject(
+		projectId: string,
+		force = false,
+	): Promise<void> {
 		const now = Date.now();
 		const existing = this.inFlightProjects.get(projectId);
 		if (existing) {
@@ -224,7 +246,10 @@ export class PullRequestRuntimeManager {
 			})
 			.finally(() => {
 				this.inFlightProjects.delete(projectId);
-				this.nextProjectRefreshAt.set(projectId, Date.now() + PROJECT_REFRESH_INTERVAL_MS);
+				this.nextProjectRefreshAt.set(
+					projectId,
+					Date.now() + PROJECT_REFRESH_INTERVAL_MS,
+				);
 			});
 
 		this.inFlightProjects.set(projectId, refreshPromise);
@@ -242,7 +267,9 @@ export class PullRequestRuntimeManager {
 			.all();
 		if (projectWorkspaces.length === 0) return;
 
-		const branchNames = [...new Set(projectWorkspaces.map((workspace) => workspace.branch))];
+		const branchNames = [
+			...new Set(projectWorkspaces.map((workspace) => workspace.branch)),
+		];
 		const branchToPullRequest = await this.fetchRepoPullRequests(
 			projectId,
 			repo,
@@ -338,7 +365,8 @@ export class PullRequestRuntimeManager {
 			const existing = latestByBranch.get(node.headRefName);
 			if (
 				!existing ||
-				new Date(node.updatedAt).getTime() > new Date(existing.updatedAt).getTime()
+				new Date(node.updatedAt).getTime() >
+					new Date(existing.updatedAt).getTime()
 			) {
 				latestByBranch.set(node.headRefName, node);
 			}
@@ -360,7 +388,9 @@ export class PullRequestRuntimeManager {
 				.sync();
 
 			const rowId = existing?.id ?? randomUUID();
-			const checks = parseCheckContexts(node.statusCheckRollup?.contexts?.nodes ?? []);
+			const checks = parseCheckContexts(
+				node.statusCheckRollup?.contexts?.nodes ?? [],
+			);
 			const data = {
 				projectId,
 				repoProvider: repo.provider,

@@ -89,7 +89,10 @@ export function DashboardNewWorkspaceDraftProvider({
 		(patch: Partial<DashboardNewWorkspaceDraft>) => {
 			setState((state) => {
 				const entries = Object.entries(patch) as Array<
-					[keyof DashboardNewWorkspaceDraft, DashboardNewWorkspaceDraft[keyof DashboardNewWorkspaceDraft]]
+					[
+						keyof DashboardNewWorkspaceDraft,
+						DashboardNewWorkspaceDraft[keyof DashboardNewWorkspaceDraft],
+					]
 				>;
 				const hasChanges = entries.some(([key, value]) => state[key] !== value);
 				if (!hasChanges) {

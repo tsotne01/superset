@@ -21,11 +21,19 @@ export const PULL_REQUESTS_QUERY = `
 									conclusion
 									detailsUrl
 									status
+									startedAt
+									completedAt
+									checkSuite {
+										workflowRun {
+											databaseId
+										}
+									}
 								}
 								... on StatusContext {
 									context
 									state
 									targetUrl
+									createdAt
 								}
 							}
 						}

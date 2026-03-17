@@ -3,8 +3,8 @@ import { cloudRouter } from "./cloud";
 import { gitRouter } from "./git";
 import { githubRouter } from "./github";
 import { healthRouter } from "./health";
-import { pullRequestsRouter } from "./pull-requests";
 import { projectRouter } from "./project";
+import { pullRequestsRouter } from "./pull-requests";
 import { workspaceRouter } from "./workspace";
 
 export const appRouter = router({

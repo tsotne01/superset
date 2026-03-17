@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import type { NodeWebSocket } from "@hono/node-ws";
-import type { Hono } from "hono";
 import { eq } from "drizzle-orm";
-import { spawn, type IPty } from "node-pty";
+import type { Hono } from "hono";
+import { type IPty, spawn } from "node-pty";
 import type { HostDb } from "../db";
 import { workspaces } from "../db/schema";
 
