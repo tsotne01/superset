@@ -158,7 +158,7 @@
         "@sentry/electron": "^7.7.0",
         "@streamdown/mermaid": "^1.0.2",
         "@superset/auth": "workspace:*",
-        "@superset/chat-mastra": "workspace:*",
+        "@superset/chat": "workspace:*",
         "@superset/db": "workspace:*",
         "@superset/desktop-mcp": "workspace:*",
         "@superset/host-service": "workspace:*",
@@ -615,8 +615,8 @@
         "typescript": "^5.9.3",
       },
     },
-    "packages/chat-mastra": {
-      "name": "@superset/chat-mastra",
+    "packages/chat": {
+      "name": "@superset/chat",
       "version": "0.0.1",
       "dependencies": {
         "@ai-sdk/anthropic": "^3.0.43",
@@ -2295,7 +2295,7 @@
 
     "@superset/auth": ["@superset/auth@workspace:packages/auth"],
 
-    "@superset/chat-mastra": ["@superset/chat-mastra@workspace:packages/chat-mastra"],
+    "@superset/chat": ["@superset/chat@workspace:packages/chat"],
 
     "@superset/db": ["@superset/db@workspace:packages/db"],
 

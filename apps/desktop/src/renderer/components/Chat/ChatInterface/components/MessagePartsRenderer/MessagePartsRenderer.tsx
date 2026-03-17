@@ -20,9 +20,9 @@ import {
 } from "../../utils/file-paths";
 import type { ToolPart } from "../../utils/tool-helpers";
 import { getArgs, normalizeToolName } from "../../utils/tool-helpers";
-import { MastraToolCallBlock } from "../MastraToolCallBlock";
 import { ReadOnlyToolCall } from "../ReadOnlyToolCall";
 import { ReasoningBlock } from "../ReasoningBlock";
+import { ToolCallBlock } from "../ToolCallBlock";
 import { StreamingMessageText } from "./components/StreamingMessageText";
 
 interface MessagePartsRendererProps {
@@ -305,7 +305,7 @@ export function MessagePartsRenderer({
 
 				// Non-read-only tool: render as BashTool/FileDiffTool/WebSearch/etc.
 				nodes.push(
-					<MastraToolCallBlock
+					<ToolCallBlock
 						key={part.toolCallId}
 						part={part as ToolPart}
 						workspaceId={workspaceId}

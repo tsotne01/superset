@@ -1,4 +1,4 @@
-import { chatServiceTrpc } from "@superset/chat-mastra/client";
+import { chatServiceTrpc } from "@superset/chat/client";
 import {
 	PromptInputButton,
 	usePromptInputController,

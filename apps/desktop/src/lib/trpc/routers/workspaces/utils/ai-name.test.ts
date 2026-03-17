@@ -35,7 +35,7 @@ mock.module("lib/ai/call-small-model", () => ({
 	callSmallModel: callSmallModelMock,
 }));
 
-mock.module("@superset/chat-mastra/server/desktop", () => ({
+mock.module("@superset/chat/server/desktop", () => ({
 	__esModule: true,
 	generateTitleFromMessage: generateTitleFromMessageMock,
 	generateTitleFromMessageWithStreamingModel:
