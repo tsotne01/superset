@@ -35,6 +35,8 @@ export function useCommandWatcher() {
 
 	const { data: workspaces, refetch: refetchWorkspaces } =
 		electronTrpc.workspaces.getAll.useQuery();
+	const { data: workspaceGroups } =
+		electronTrpc.workspaces.getAllGrouped.useQuery();
 	const { data: projects } = electronTrpc.projects.getRecents.useQuery();
 
 	const getCurrentWorkspaceIdFromRoute = useCallback(() => {
@@ -54,6 +56,7 @@ export function useCommandWatcher() {
 			terminalWrite,
 			refetchWorkspaces: async () => refetchWorkspaces(),
 			getWorkspaces: () => workspaces,
+			getWorkspaceGroups: () => workspaceGroups,
 			getProjects: () => projects,
 			getActiveWorkspaceId: getCurrentWorkspaceIdFromRoute,
 		}),
@@ -66,6 +69,7 @@ export function useCommandWatcher() {
 			terminalWrite,
 			refetchWorkspaces,
 			workspaces,
+			workspaceGroups,
 			projects,
 			getCurrentWorkspaceIdFromRoute,
 		],

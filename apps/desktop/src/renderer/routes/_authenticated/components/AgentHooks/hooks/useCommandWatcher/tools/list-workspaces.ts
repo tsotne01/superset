@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { buildWorkspaceList } from "./list-workspaces.utils";
 import type { CommandResult, ToolContext, ToolDefinition } from "./types";
 
 const schema = z.object({});
@@ -15,7 +16,14 @@ async function execute(
 
 	return {
 		success: true,
-		data: { workspaces: workspaces as unknown as Record<string, unknown>[] },
+		data: {
+			workspaces: buildWorkspaceList({
+				workspaces,
+				projects: ctx.getProjects(),
+				groupedWorkspaces: ctx.getWorkspaceGroups(),
+				activeWorkspaceId: ctx.getActiveWorkspaceId(),
+			}) as unknown as Record<string, unknown>[],
+		},
 	};
 }
 

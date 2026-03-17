@@ -14,6 +14,24 @@ export interface BulkItemError {
 	[key: string]: unknown;
 }
 
+export interface WorkspaceListGroupItem {
+	id: string;
+	worktreePath: string;
+}
+
+export interface WorkspaceListSection {
+	workspaces: WorkspaceListGroupItem[];
+}
+
+export interface WorkspaceListGroup {
+	project: {
+		id: string;
+		mainRepoPath: string;
+	};
+	workspaces: WorkspaceListGroupItem[];
+	sections: WorkspaceListSection[];
+}
+
 export function buildBulkResult<T>({
 	items,
 	errors,
@@ -57,6 +75,7 @@ export interface ToolContext {
 	// Query helpers
 	refetchWorkspaces: () => Promise<unknown>;
 	getWorkspaces: () => SelectWorkspace[] | undefined;
+	getWorkspaceGroups: () => WorkspaceListGroup[] | undefined;
 	getProjects: () => SelectProject[] | undefined;
 	getActiveWorkspaceId: () => string | null;
 }
