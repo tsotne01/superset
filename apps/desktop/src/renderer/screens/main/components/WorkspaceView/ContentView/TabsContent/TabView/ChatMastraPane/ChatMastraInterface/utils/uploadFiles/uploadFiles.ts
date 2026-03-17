@@ -1,8 +1,5 @@
 import type { FileUIPart } from "ai";
-import { env } from "renderer/env.renderer";
-import { getAuthToken } from "renderer/lib/auth-client";
-
-const apiUrl = env.NEXT_PUBLIC_API_URL;
+import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 
 async function getHttpErrorDetail(response: Response): Promise<string> {
 	const errorBody = await response
@@ -12,6 +9,24 @@ async function getHttpErrorDetail(response: Response): Promise<string> {
 	const statusText = response.statusText ? ` ${response.statusText}` : "";
 	const detail = errorBody ? ` - ${errorBody.slice(0, 500)}` : "";
 	return `${response.status}${statusText}${detail}`;
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onerror = () => {
+			reject(reader.error ?? new Error("Failed to read attachment"));
+		};
+		reader.onload = () => {
+			if (typeof reader.result !== "string") {
+				reject(new Error("Attachment could not be converted to a data URL"));
+				return;
+			}
+
+			resolve(reader.result);
+		};
+		reader.readAsDataURL(blob);
+	});
 }
 
 async function uploadFile(
@@ -27,27 +42,16 @@ async function uploadFile(
 
 	const blob = await response.blob();
 	const filename = file.filename || "attachment";
-	const formData = new FormData();
-	formData.append("file", new File([blob], filename, { type: file.mediaType }));
-
-	const token = getAuthToken();
-	const uploadResponse = await fetch(
-		`${apiUrl}/api/chat/${sessionId}/attachments`,
-		{
-			method: "POST",
-			signal,
-			headers: token ? { Authorization: `Bearer ${token}` } : {},
-			body: formData,
-		},
-	);
-
-	if (!uploadResponse.ok) {
-		const detail = await getHttpErrorDetail(uploadResponse);
-		throw new Error(`Upload failed for session ${sessionId}: ${detail}`);
+	if (signal?.aborted) {
+		throw new DOMException("The operation was aborted", "AbortError");
 	}
 
-	const result: { filename?: string; mediaType: string; url: string } =
-		await uploadResponse.json();
+	const result = await apiTrpcClient.chat.uploadAttachment.mutate({
+		sessionId,
+		filename,
+		mediaType: file.mediaType,
+		fileData: await blobToDataUrl(blob),
+	});
 	return { type: "file", ...result };
 }
 
