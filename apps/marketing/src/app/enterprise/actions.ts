@@ -1,27 +1,10 @@
 "use server";
 
 import { EnterpriseInquiryEmail } from "@superset/email/emails/enterprise-inquiry";
-import { headers } from "next/headers";
 import { Resend } from "resend";
 import { env } from "@/env";
 
 const resend = new Resend(env.RESEND_API_KEY);
-
-// Simple in-memory rate limiter (for production, use Redis)
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
-const MAX_REQUESTS_PER_WINDOW = 3;
-const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // Clean up every 5 minutes
-
-// Periodic cleanup to prevent memory leak
-setInterval(() => {
-	const now = Date.now();
-	for (const [ip, record] of rateLimitMap.entries()) {
-		if (now > record.resetAt) {
-			rateLimitMap.delete(ip);
-		}
-	}
-}, CLEANUP_INTERVAL_MS);
 
 interface EnterpriseFormData {
 	name: string;
@@ -51,56 +34,12 @@ function sanitizeInput(input: string): string {
 	return input.replace(/[\r\n\0]/g, "").trim();
 }
 
-function checkRateLimit(ip: string): boolean {
-	const now = Date.now();
-	const record = rateLimitMap.get(ip);
-
-	if (!record || now > record.resetAt) {
-		// New window
-		rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-		return true;
-	}
-
-	if (record.count >= MAX_REQUESTS_PER_WINDOW) {
-		return false;
-	}
-
-	record.count++;
-	return true;
-}
-
 export async function submitEnterpriseInquiry(data: EnterpriseFormData) {
 	const { name, role, company, email, phone, message, honeypot } = data;
 
 	// Honeypot check - if filled, silently reject (don't leak that we detected a bot)
 	if (honeypot && honeypot.length > 0) {
 		return { success: false, error: "Something went wrong. Please try again." };
-	}
-
-	// Rate limiting
-	const headersList = await headers();
-	// Try multiple IP headers in order of preference (different proxies use different headers)
-	const forwardedFor = headersList.get("x-forwarded-for");
-	const realIp = headersList.get("x-real-ip");
-	const cfConnectingIp = headersList.get("cf-connecting-ip"); // Cloudflare
-
-	let ip: string | null = null;
-	if (forwardedFor) {
-		// Parse the first IP from x-forwarded-for (format: "client, proxy1, proxy2")
-		ip = forwardedFor.split(",")[0]?.trim() ?? null;
-	} else if (realIp) {
-		ip = realIp;
-	} else if (cfConnectingIp) {
-		ip = cfConnectingIp;
-	}
-
-	// Only apply rate limiting if we can determine the IP
-	// (prevents all "unknown" IPs from sharing the same rate limit bucket)
-	if (ip && !checkRateLimit(ip)) {
-		return {
-			success: false,
-			error: "Too many requests. Please try again later.",
-		};
 	}
 
 	// Validate required fields exist
