@@ -96,7 +96,8 @@ export function buildPromptAgentLaunchRequest({
 
 					// Handle duplicates by appending _1, _2, etc.
 					if (seenFilenames.has(sanitized)) {
-						const count = seenFilenames.get(sanitized)! + 1;
+						const prevCount = seenFilenames.get(sanitized);
+						const count = (prevCount ?? 0) + 1;
 						seenFilenames.set(sanitized, count);
 
 						// Insert counter before extension
