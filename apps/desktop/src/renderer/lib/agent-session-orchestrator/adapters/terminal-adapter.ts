@@ -44,9 +44,9 @@ async function writeTaskPromptFile(
 }
 
 // Attachment limits to prevent memory/disk exhaustion
-const MAX_ATTACHMENTS = 20;
-const MAX_TOTAL_BYTES = 50 * 1024 * 1024; // 50MB total decoded size
-const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024; // 10MB per file
+const MAX_ATTACHMENTS = 10;
+const MAX_TOTAL_BYTES = 200 * 1024 * 1024; // 200MB total decoded size
+const MAX_SINGLE_FILE_BYTES = 50 * 1024 * 1024; // 50MB per file
 
 async function writeAttachmentFiles(
 	workspaceId: string,
