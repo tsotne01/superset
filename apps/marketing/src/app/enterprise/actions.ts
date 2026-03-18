@@ -79,13 +79,24 @@ export async function submitEnterpriseInquiry(data: EnterpriseFormData) {
 
 	// Rate limiting
 	const headersList = await headers();
+	// Try multiple IP headers in order of preference (different proxies use different headers)
 	const forwardedFor = headersList.get("x-forwarded-for");
-	// Parse the first IP from x-forwarded-for (format: "client, proxy1, proxy2")
-	const ip = forwardedFor
-		? (forwardedFor.split(",")[0]?.trim() ?? "unknown")
-		: "unknown";
+	const realIp = headersList.get("x-real-ip");
+	const cfConnectingIp = headersList.get("cf-connecting-ip"); // Cloudflare
 
-	if (!checkRateLimit(ip)) {
+	let ip: string | null = null;
+	if (forwardedFor) {
+		// Parse the first IP from x-forwarded-for (format: "client, proxy1, proxy2")
+		ip = forwardedFor.split(",")[0]?.trim() ?? null;
+	} else if (realIp) {
+		ip = realIp;
+	} else if (cfConnectingIp) {
+		ip = cfConnectingIp;
+	}
+
+	// Only apply rate limiting if we can determine the IP
+	// (prevents all "unknown" IPs from sharing the same rate limit bucket)
+	if (ip && !checkRateLimit(ip)) {
 		return {
 			success: false,
 			error: "Too many requests. Please try again later.",
