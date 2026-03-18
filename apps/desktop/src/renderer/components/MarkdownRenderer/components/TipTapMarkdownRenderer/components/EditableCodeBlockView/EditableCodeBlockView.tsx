@@ -9,11 +9,11 @@ import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
 import { useState } from "react";
 import { HiCheck, HiChevronDown, HiOutlineClipboard } from "react-icons/hi2";
 import {
-	COMMON_CODE_BLOCK_LANGUAGES,
+	FILE_VIEW_CODE_BLOCK_LANGUAGES,
 	getCodeBlockLanguageLabel,
 } from "renderer/lib/tiptap/code-block-languages";
 
-export function CodeBlockView({
+export function EditableCodeBlockView({
 	node,
 	updateAttributes,
 	extension,
@@ -26,14 +26,21 @@ export function CodeBlockView({
 
 	const currentLanguage = attrs.language || "plaintext";
 	const currentLabel = getCodeBlockLanguageLabel(
-		COMMON_CODE_BLOCK_LANGUAGES,
+		FILE_VIEW_CODE_BLOCK_LANGUAGES,
 		currentLanguage,
 	);
 
 	const handleCopy = async () => {
-		await navigator.clipboard.writeText(node.textContent);
-		setCopied(true);
-		setTimeout(() => setCopied(false), 2000);
+		try {
+			await navigator.clipboard.writeText(node.textContent);
+			setCopied(true);
+			setTimeout(() => setCopied(false), 2000);
+		} catch (error) {
+			console.error(
+				"[EditableCodeBlockView] Failed to copy code block:",
+				error,
+			);
+		}
 	};
 
 	const handleLanguageChange = (language: string) => {
@@ -44,30 +51,30 @@ export function CodeBlockView({
 	return (
 		<NodeViewWrapper as="pre" className={`${htmlAttrs.class} relative group`}>
 			<div
-				className={`absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ${menuOpen ? "opacity-100" : ""}`}
+				className={`absolute top-2 right-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${menuOpen ? "opacity-100" : ""}`}
 			>
 				<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
 					<DropdownMenuTrigger asChild>
 						<button
 							type="button"
-							className="flex items-center gap-1 h-6 px-2 text-xs bg-background/80 backdrop-blur border border-border rounded hover:bg-accent transition-colors"
+							className="flex h-6 items-center gap-1 rounded border border-border bg-background/80 px-2 text-xs backdrop-blur transition-colors hover:bg-accent"
 						>
 							{currentLabel}
-							<HiChevronDown className="w-3 h-3" />
+							<HiChevronDown className="h-3 w-3" />
 						</button>
 					</DropdownMenuTrigger>
 					<DropdownMenuContent
 						align="end"
-						className="max-h-64 overflow-y-auto w-40"
+						className="max-h-64 w-40 overflow-y-auto"
 					>
-						{COMMON_CODE_BLOCK_LANGUAGES.map((lang) => (
+						{FILE_VIEW_CODE_BLOCK_LANGUAGES.map((language) => (
 							<DropdownMenuItem
-								key={lang.value}
-								onSelect={() => handleLanguageChange(lang.value)}
+								key={language.value}
+								onSelect={() => handleLanguageChange(language.value)}
 								className="flex items-center justify-between"
 							>
-								<span>{lang.label}</span>
-								{lang.value === currentLanguage && (
+								<span>{language.label}</span>
+								{language.value === currentLanguage && (
 									<span className="text-xs">✓</span>
 								)}
 							</DropdownMenuItem>
@@ -78,17 +85,19 @@ export function CodeBlockView({
 				<button
 					type="button"
 					onClick={handleCopy}
-					className="flex items-center justify-center h-6 w-6 bg-background/80 backdrop-blur border border-border rounded hover:bg-accent transition-colors"
+					aria-label={copied ? "Copied code block" : "Copy code block"}
+					title={copied ? "Copied code block" : "Copy code block"}
+					className="flex h-6 w-6 items-center justify-center rounded border border-border bg-background/80 backdrop-blur transition-colors hover:bg-accent"
 				>
 					{copied ? (
-						<HiCheck className="w-3.5 h-3.5 text-green-500" />
+						<HiCheck className="h-3.5 w-3.5 text-green-500" />
 					) : (
-						<HiOutlineClipboard className="w-3.5 h-3.5" />
+						<HiOutlineClipboard className="h-3.5 w-3.5" />
 					)}
 				</button>
 			</div>
 
-			<code className="hljs !bg-transparent block">
+			<code className="hljs block !bg-transparent">
 				<NodeViewContent />
 			</code>
 		</NodeViewWrapper>
