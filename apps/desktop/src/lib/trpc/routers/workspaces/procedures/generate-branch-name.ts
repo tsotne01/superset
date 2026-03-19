@@ -1,14 +1,11 @@
-import { projects, settings } from "@superset/local-db";
+import { projects } from "@superset/local-db";
 import { eq } from "drizzle-orm";
 import { localDb } from "main/lib/local-db";
 import { z } from "zod";
 import { publicProcedure, router } from "../../..";
 import { generateBranchNameFromPrompt } from "../utils/ai-branch-name";
-import {
-	getBranchPrefix,
-	listBranches,
-	sanitizeAuthorPrefix,
-} from "../utils/git";
+import { resolveBranchPrefix } from "../utils/branch-prefix";
+import { listBranches } from "../utils/git";
 
 export const createGenerateBranchNameProcedures = () => {
 	return router({
@@ -49,36 +46,13 @@ export const createGenerateBranchNameProcedures = () => {
 					existingBranches = [];
 				}
 
-				// Calculate branch prefix (same logic as create.ts) to check conflicts correctly
+				// Resolve branch prefix using shared utility
 				let branchPrefix: string | undefined;
 				try {
-					const globalSettings = localDb.select().from(settings).get();
-					const projectOverrides = project.branchPrefixMode != null;
-					const prefixMode = projectOverrides
-						? project.branchPrefixMode
-						: (globalSettings?.branchPrefixMode ?? "none");
-					const customPrefix = projectOverrides
-						? project.branchPrefixCustom
-						: globalSettings?.branchPrefixCustom;
-
-					const rawPrefix = await getBranchPrefix({
-						repoPath: project.mainRepoPath,
-						mode: prefixMode,
-						customPrefix,
-					});
-					const sanitizedPrefix = rawPrefix
-						? sanitizeAuthorPrefix(rawPrefix)
-						: undefined;
-
-					const existingSet = new Set(
-						existingBranches.map((b) => b.toLowerCase()),
-					);
-					const prefixWouldCollide =
-						sanitizedPrefix && existingSet.has(sanitizedPrefix.toLowerCase());
-					branchPrefix = prefixWouldCollide ? undefined : sanitizedPrefix;
+					branchPrefix = await resolveBranchPrefix(project, existingBranches);
 				} catch (error) {
 					console.warn(
-						"[generateBranchName] Failed to get branch prefix:",
+						"[generateBranchName] Failed to resolve branch prefix:",
 						error,
 					);
 					branchPrefix = undefined;
