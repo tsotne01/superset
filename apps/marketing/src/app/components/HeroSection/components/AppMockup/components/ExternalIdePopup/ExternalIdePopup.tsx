@@ -9,6 +9,8 @@ interface ExternalIdePopupProps {
 }
 
 export function ExternalIdePopup({ activeDemo }: ExternalIdePopupProps) {
+	const treeIconClassName = "size-3.5 shrink-0";
+
 	return (
 		<motion.div
 			className="absolute bottom-6 right-6 w-[55%] overflow-hidden rounded-xl bg-black/50 shadow-[0_8px_40px_-8px_rgba(0,0,0,0.6)] backdrop-blur-xl"
@@ -50,20 +52,20 @@ export function ExternalIdePopup({ activeDemo }: ExternalIdePopupProps) {
 			<div className="flex h-[calc(100%-36px)]">
 				<div className="w-[116px] border-r border-white/[0.06] bg-white/[0.02] p-5 text-[11px]">
 					<div className="mb-3 flex items-center gap-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground/36">
-						<LuFolder className="size-4" />
+						<LuFolder className={treeIconClassName} />
 						<span>src</span>
 					</div>
 					<div className="ml-4 space-y-2">
 						<div className="flex items-center gap-2 font-medium text-orange-500/75">
-							<LuFile className="size-4" />
+							<LuFile className={treeIconClassName} />
 							<span>index.ts</span>
 						</div>
 						<div className="flex items-center gap-2 text-muted-foreground/30">
-							<LuFile className="size-4" />
+							<LuFile className={treeIconClassName} />
 							<span>utils.ts</span>
 						</div>
 						<div className="flex items-center gap-2 text-muted-foreground/30">
-							<LuFile className="size-4" />
+							<LuFile className={treeIconClassName} />
 							<span>types.ts</span>
 						</div>
 					</div>
