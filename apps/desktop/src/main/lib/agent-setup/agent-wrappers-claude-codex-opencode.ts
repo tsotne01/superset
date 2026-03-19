@@ -62,8 +62,14 @@ interface ClaudeSettingsJson {
 	[key: string]: unknown;
 }
 
+const CLAUDE_DYNAMIC_NOTIFY_PATH_MARKER = "$SUPERSET_HOME_DIR/hooks/notify.sh";
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function getClaudeManagedHookCommand(): string {
+	return '[ -n "$SUPERSET_HOME_DIR" ] && [ -x "$SUPERSET_HOME_DIR/hooks/notify.sh" ] && "$SUPERSET_HOME_DIR/hooks/notify.sh" || true';
 }
 
 function isManagedClaudeHookCommand(
@@ -72,6 +78,7 @@ function isManagedClaudeHookCommand(
 ): boolean {
 	return (
 		command?.includes(notifyScriptPath) ||
+		command?.includes(CLAUDE_DYNAMIC_NOTIFY_PATH_MARKER) ||
 		isSupersetManagedHookCommand(command, NOTIFY_SCRIPT_NAME)
 	);
 }
@@ -145,6 +152,7 @@ export function getClaudeGlobalSettingsJsonContent(
 	const globalPath = getClaudeGlobalSettingsJsonPath();
 	const existing = readExistingClaudeSettings(globalPath);
 	if (!existing) return null;
+	const managedHookCommand = getClaudeManagedHookCommand();
 
 	if (!existing.hooks || typeof existing.hooks !== "object") {
 		existing.hooks = {};
@@ -162,34 +170,34 @@ export function getClaudeGlobalSettingsJsonContent(
 		{
 			eventName: "UserPromptSubmit",
 			definition: {
-				hooks: [{ type: "command", command: notifyScriptPath }],
+				hooks: [{ type: "command", command: managedHookCommand }],
 			},
 		},
 		{
 			eventName: "Stop",
 			definition: {
-				hooks: [{ type: "command", command: notifyScriptPath }],
+				hooks: [{ type: "command", command: managedHookCommand }],
 			},
 		},
 		{
 			eventName: "PostToolUse",
 			definition: {
 				matcher: "*",
-				hooks: [{ type: "command", command: notifyScriptPath }],
+				hooks: [{ type: "command", command: managedHookCommand }],
 			},
 		},
 		{
 			eventName: "PostToolUseFailure",
 			definition: {
 				matcher: "*",
-				hooks: [{ type: "command", command: notifyScriptPath }],
+				hooks: [{ type: "command", command: managedHookCommand }],
 			},
 		},
 		{
 			eventName: "PermissionRequest",
 			definition: {
 				matcher: "*",
-				hooks: [{ type: "command", command: notifyScriptPath }],
+				hooks: [{ type: "command", command: managedHookCommand }],
 			},
 		},
 	];
