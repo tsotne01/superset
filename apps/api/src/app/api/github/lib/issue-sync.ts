@@ -1,25 +1,26 @@
 import { db } from "@superset/db/client";
 import { accounts, members, taskStatuses, tasks } from "@superset/db/schema";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
+import { pickPreferredStatusByType } from "./issue-statuses";
 
 /**
- * Resolve the first task status matching `type` that is NOT tied to an external provider,
- * ordered by position. Cached per-call via the statusMap parameter.
+ * Resolve org task statuses by generic type.
+ * Prefer non-external statuses when they exist, otherwise fall back to the
+ * first matching status by position regardless of provider.
  */
 export async function resolveOrgTaskStatuses(organizationId: string) {
 	const statuses = await db
-		.select({ id: taskStatuses.id, type: taskStatuses.type })
+		.select({
+			id: taskStatuses.id,
+			type: taskStatuses.type,
+			externalProvider: taskStatuses.externalProvider,
+		})
 		.from(taskStatuses)
-		.where(
-			and(
-				eq(taskStatuses.organizationId, organizationId),
-				isNull(taskStatuses.externalProvider),
-			),
-		)
+		.where(eq(taskStatuses.organizationId, organizationId))
 		.orderBy(asc(taskStatuses.position));
 
-	const unstartedStatus = statuses.find((s) => s.type === "unstarted");
-	const completedStatus = statuses.find((s) => s.type === "completed");
+	const unstartedStatus = pickPreferredStatusByType(statuses, "unstarted");
+	const completedStatus = pickPreferredStatusByType(statuses, "completed");
 
 	return { unstartedStatus, completedStatus };
 }

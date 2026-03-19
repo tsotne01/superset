@@ -1,8 +1,9 @@
-import { db } from "@superset/db/client";
+import { db, dbWs } from "@superset/db/client";
 import {
 	githubInstallations,
 	githubPullRequests,
 	githubRepositories,
+	tasks,
 } from "@superset/db/schema";
 import type { TRPCRouterRecord } from "@trpc/server";
 import { TRPCError } from "@trpc/server";
@@ -41,10 +42,21 @@ export const githubRouter = {
 		.mutation(async ({ ctx, input }) => {
 			await verifyOrgAdmin(ctx.session.user.id, input.organizationId);
 
-			const result = await db
-				.delete(githubInstallations)
-				.where(eq(githubInstallations.organizationId, input.organizationId))
-				.returning({ id: githubInstallations.id });
+			const result = await dbWs.transaction(async (tx) => {
+				await tx
+					.delete(tasks)
+					.where(
+						and(
+							eq(tasks.organizationId, input.organizationId),
+							eq(tasks.externalProvider, "github"),
+						),
+					);
+
+				return tx
+					.delete(githubInstallations)
+					.where(eq(githubInstallations.organizationId, input.organizationId))
+					.returning({ id: githubInstallations.id });
+			});
 
 			if (result.length === 0) {
 				return { success: false, error: "No installation found" };

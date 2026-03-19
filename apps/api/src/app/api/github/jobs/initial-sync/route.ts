@@ -267,6 +267,17 @@ export async function POST(request: Request) {
 			const { unstartedStatus, completedStatus } =
 				await resolveOrgTaskStatuses(organizationId);
 
+			if (!unstartedStatus || !completedStatus) {
+				console.warn(
+					"[github/initial-sync] Missing task statuses for issue sync:",
+					{
+						organizationId,
+						hasUnstartedStatus: !!unstartedStatus,
+						hasCompletedStatus: !!completedStatus,
+					},
+				);
+			}
+
 			for (const dbRepo of issueSyncRepos) {
 				const issues: Array<{
 					id: number;
@@ -333,7 +344,13 @@ export async function POST(request: Request) {
 						? completedStatus?.id
 						: unstartedStatus?.id;
 
-					if (!statusId) continue;
+					if (!statusId) {
+						console.warn(
+							"[github/initial-sync] Skipping issue due to missing mapped status:",
+							`${dbRepo.fullName}#${issue.number}`,
+						);
+						continue;
+					}
 
 					const assigneeUserId = issue.assignee
 						? (assigneeMap.get(String(issue.assignee.id)) ?? null)
