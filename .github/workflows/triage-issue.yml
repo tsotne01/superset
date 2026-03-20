@@ -41,7 +41,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code

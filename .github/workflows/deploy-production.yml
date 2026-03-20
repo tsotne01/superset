@@ -31,7 +31,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Run database migrations
         working-directory: packages/db
@@ -63,7 +63,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Install Vercel CLI
         run: npm install --global vercel@$VERCEL_CLI_VERSION
@@ -198,7 +198,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Install Vercel CLI
         run: npm install --global vercel@$VERCEL_CLI_VERSION
@@ -289,7 +289,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Install Vercel CLI
         run: npm install --global vercel@$VERCEL_CLI_VERSION
@@ -374,7 +374,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Install Vercel CLI
         run: npm install --global vercel@$VERCEL_CLI_VERSION
@@ -493,7 +493,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Deploy Worker
         working-directory: apps/electric-proxy
@@ -525,7 +525,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Install Vercel CLI
         run: npm install --global vercel@$VERCEL_CLI_VERSION

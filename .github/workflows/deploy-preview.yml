@@ -43,7 +43,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Create Neon branch
         id: create-branch
@@ -157,7 +157,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Install Vercel CLI
         run: npm install --global vercel@$VERCEL_CLI_VERSION
@@ -322,7 +322,7 @@ jobs:
           echo "DATABASE_URL_UNPOOLED=$DATABASE_URL_UNPOOLED" >> $GITHUB_ENV
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Install Vercel CLI
         run: npm install --global vercel@$VERCEL_CLI_VERSION
@@ -429,7 +429,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Install Vercel CLI
         run: npm install --global vercel@$VERCEL_CLI_VERSION
@@ -541,7 +541,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Install Vercel CLI
         run: npm install --global vercel@$VERCEL_CLI_VERSION
@@ -650,7 +650,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Install Vercel CLI
         run: npm install --global vercel@$VERCEL_CLI_VERSION

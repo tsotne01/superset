@@ -27,7 +27,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Sherif
         run: bunx sherif
@@ -52,7 +52,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Lint
         run: bun run lint
@@ -77,7 +77,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Test
         env:
@@ -104,7 +104,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Typecheck
         run: bun run typecheck
@@ -129,7 +129,7 @@ jobs:
           key: ${{ runner.os }}-bun-${{ steps.setup-bun.outputs.bun-revision }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
-        run: bun install --frozen
+        run: bun install --frozen --ignore-scripts
 
       - name: Install desktop native dependencies
         working-directory: apps/desktop
