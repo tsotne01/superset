@@ -23,7 +23,7 @@ describe("Tasks table delete wiring", () => {
 	test("TasksTableView no longer uses a delete stub", () => {
 		const source = readComponent("TasksTableView.tsx");
 
-		expect(source).not.toContain("console.log(\"Delete task:");
+		expect(source).not.toContain('console.log("Delete task:');
 		expect(source).toContain("<TaskContextMenu task={row.original}>");
 	});
 });
