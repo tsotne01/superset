@@ -79,6 +79,10 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen --ignore-scripts
 
+      - name: Install desktop native dependencies
+        working-directory: apps/desktop
+        run: bun run install:deps
+
       - name: Test
         env:
           NEXT_PUBLIC_OUTLIT_KEY: ${{ secrets.NEXT_PUBLIC_OUTLIT_KEY || 'ci-outlit-placeholder-key' }}
