@@ -556,6 +556,16 @@ function PromptGroupInner({
 			return;
 		}
 
+		// Prevent re-entry while generation/creation is in flight
+		if (
+			isGeneratingBranchName ||
+			generateBranchNameMutation.isPending ||
+			createWorkspace.isPending ||
+			createFromPr.isPending
+		) {
+			return;
+		}
+
 		// Set pending workspace immediately for suspense UI
 		const displayName =
 			workspaceNameEdited && workspaceName.trim()
@@ -600,8 +610,28 @@ function PromptGroupInner({
 			} catch (error) {
 				// Clear timeout on error
 				if (timeoutId) clearTimeout(timeoutId);
-				console.warn("[PromptGroup] AI branch name generation failed:", error);
-				toast.info("Using random branch name (AI generation unavailable)");
+
+				// Distinguish error types for better user feedback
+				const errorMessage =
+					error instanceof Error ? error.message : String(error);
+				if (errorMessage.includes("timeout")) {
+					console.warn("[PromptGroup] AI generation timeout");
+					toast.info("Using random branch name (AI generation timed out)");
+				} else if (
+					errorMessage.toLowerCase().includes("auth") ||
+					errorMessage.includes("401") ||
+					errorMessage.includes("403")
+				) {
+					console.error("[PromptGroup] AI auth error:", error);
+					toast.error(
+						"AI authentication failed. Please check your AI settings.",
+					);
+					setPendingWorkspace(null);
+					return; // Don't continue with workspace creation on auth errors
+				} else {
+					console.warn("[PromptGroup] AI generation failed:", error);
+					toast.info("Using random branch name (AI generation unavailable)");
+				}
 				// Continue with workspace creation - backend will use random name
 			} finally {
 				// Always clear global state to prevent stuck "Generating..." in sidebar
@@ -676,7 +706,9 @@ function PromptGroupInner({
 					prompt: trimmedPrompt || undefined,
 					branchName:
 						(branchNameEdited && branchName.trim()
-							? sanitizeBranchNameWithMaxLength(branchName.trim())
+							? sanitizeBranchNameWithMaxLength(branchName.trim(), undefined, {
+									preserveCase: true,
+								})
 							: aiBranchName) || undefined,
 					baseBranch: baseBranch || undefined,
 				},
@@ -783,6 +815,8 @@ function PromptGroupInner({
 						onBlur={() => {
 							const sanitized = sanitizeBranchNameWithMaxLength(
 								branchName.trim(),
+								undefined,
+								{ preserveCase: true },
 							);
 							if (!sanitized) {
 								updateDraft({ branchName: "", branchNameEdited: false });

@@ -33,8 +33,9 @@ export async function resolveBranchPrefix(
 		mode: prefixMode,
 		customPrefix,
 	});
+	// Normalize empty strings to undefined (sanitizeAuthorPrefix can return "")
 	const sanitizedPrefix = rawPrefix
-		? sanitizeAuthorPrefix(rawPrefix)
+		? sanitizeAuthorPrefix(rawPrefix) || undefined
 		: undefined;
 
 	// Check if prefix would collide with an existing branch name
