@@ -111,7 +111,6 @@ interface FileViewerContentProps {
 	diffData: DiffData | undefined;
 	editorRef: MutableRefObject<CodeEditorAdapter | null>;
 	markdownEditorRef: MutableRefObject<MarkdownEditorAdapter | null>;
-	draftContentRef: MutableRefObject<string | null>;
 	renderedContent: string;
 	initialLine?: number;
 	initialColumn?: number;
@@ -147,7 +146,6 @@ export function FileViewerContent({
 	diffData,
 	editorRef,
 	markdownEditorRef,
-	draftContentRef,
 	renderedContent,
 	initialLine,
 	initialColumn,
