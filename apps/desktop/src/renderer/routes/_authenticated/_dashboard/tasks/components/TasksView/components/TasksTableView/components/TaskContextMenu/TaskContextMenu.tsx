@@ -37,13 +37,11 @@ export function TaskContextMenu({
 }: TaskContextMenuProps) {
 	const collections = useCollections();
 
-	// Load statuses for the status submenu
 	const { data: allStatuses } = useLiveQuery(
 		(q) => q.from({ taskStatuses: collections.taskStatuses }),
 		[collections],
 	);
 
-	// Load users for the assignee submenu
 	const { data: allUsers } = useLiveQuery(
 		(q) => q.from({ users: collections.users }),
 		[collections],
@@ -110,7 +108,6 @@ export function TaskContextMenu({
 		<ContextMenu>
 			<ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
 			<ContextMenuContent className="w-64">
-				{/* Status submenu */}
 				<ContextMenuSub>
 					<ContextMenuSubTrigger>
 						<ActiveIcon className="mr-2" />

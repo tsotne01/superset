@@ -72,7 +72,6 @@ export function TasksTableView({
 	return (
 		<div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
 			<div style={{ height: virtualizer.getTotalSize() }}>
-				{/* Spacer positions items at the correct scroll offset */}
 				<div style={{ height: virtualItems[0]?.start ?? 0 }} />
 
 				{virtualItems.map((virtualRow, i) => {
