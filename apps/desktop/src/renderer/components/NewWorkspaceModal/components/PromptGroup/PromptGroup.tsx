@@ -604,10 +604,11 @@ function PromptGroupInner({
 				toast.info("Using random branch name (AI generation unavailable)");
 				// Continue with workspace creation - backend will use random name
 			} finally {
-				// Only update state if component is still mounted
+				// Always clear global state to prevent stuck "Generating..." in sidebar
+				setIsGeneratingBranchNameGlobal(false);
+				// Only update local state if component is still mounted
 				if (isMountedRef.current) {
 					setIsGeneratingBranchName(false);
-					setIsGeneratingBranchNameGlobal(false);
 				}
 			}
 		}
@@ -623,6 +624,7 @@ function PromptGroupInner({
 					})),
 				);
 			} catch (err) {
+				setPendingWorkspace(null);
 				toast.error(
 					err instanceof Error ? err.message : "Failed to process attachments",
 				);
@@ -634,6 +636,7 @@ function PromptGroupInner({
 		try {
 			launchRequest = buildLaunchRequest(trimmedPrompt, convertedFiles);
 		} catch (error) {
+			setPendingWorkspace(null);
 			toast.error(
 				error instanceof Error
 					? error.message

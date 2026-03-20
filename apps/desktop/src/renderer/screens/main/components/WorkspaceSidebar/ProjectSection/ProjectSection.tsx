@@ -87,7 +87,7 @@ export function ProjectSection({
 	const pendingWorkspaceItem =
 		pendingWorkspace && pendingWorkspace.projectId === projectId ? (
 			<div className={cn(isSidebarCollapsed ? "w-full px-1" : "px-1 pb-0.5")}>
-				<PendingWorkspaceItem />
+				<PendingWorkspaceItem isCollapsed={isSidebarCollapsed} />
 			</div>
 		) : null;
 

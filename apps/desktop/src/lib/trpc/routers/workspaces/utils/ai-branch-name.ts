@@ -53,7 +53,7 @@ function resolveConflict(
 
 	while (hasConflict(prefixedCandidate, existingSet)) {
 		counter++;
-		if (counter >= MAX_CONFLICT_RESOLUTION_ATTEMPTS) {
+		if (counter > MAX_CONFLICT_RESOLUTION_ATTEMPTS) {
 			throw new Error(
 				`Could not find unique branch name after ${MAX_CONFLICT_RESOLUTION_ATTEMPTS} attempts`,
 			);
