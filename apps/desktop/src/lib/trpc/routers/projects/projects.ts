@@ -360,6 +360,125 @@ export const createProjectsRouter = (getWindow: () => BrowserWindow | null) => {
 				}
 			}),
 
+		listIssues: publicProcedure
+			.input(z.object({ projectId: z.string() }))
+			.query(async ({ input }) => {
+				const project = localDb
+					.select()
+					.from(projects)
+					.where(eq(projects.id, input.projectId))
+					.get();
+				if (!project) return [];
+
+				try {
+					const { stdout } = await execWithShellEnv(
+						"gh",
+						[
+							"issue",
+							"list",
+							"--state",
+							"open",
+							"--limit",
+							"30",
+							"--json",
+							"number,title,url,state,labels",
+						],
+						{ cwd: project.mainRepoPath },
+					);
+					const raw: unknown = JSON.parse(stdout.trim() || "[]");
+					if (!Array.isArray(raw)) return [];
+					return raw
+						.filter(
+							(
+								item: unknown,
+							): item is {
+								number: number;
+								title: string;
+								url: string;
+								state: string;
+								labels: unknown;
+							} =>
+								typeof item === "object" &&
+								item !== null &&
+								"number" in item &&
+								"title" in item &&
+								"url" in item &&
+								"state" in item,
+						)
+						.map((issue) => ({
+							issueNumber: issue.number,
+							title: issue.title,
+							url: issue.url,
+							state:
+								issue.state === "OPEN" ? "open" : issue.state.toLowerCase(),
+						}));
+				} catch (err) {
+					console.warn("[listIssues] Failed to list issues:", err);
+					return [];
+				}
+			}),
+
+		getIssueContent: publicProcedure
+			.input(z.object({ projectId: z.string(), issueNumber: z.number() }))
+			.query(async ({ input }) => {
+				const project = localDb
+					.select()
+					.from(projects)
+					.where(eq(projects.id, input.projectId))
+					.get();
+				if (!project) {
+					throw new Error(`Project ${input.projectId} not found`);
+				}
+
+				try {
+					const { stdout } = await execWithShellEnv(
+						"gh",
+						[
+							"issue",
+							"view",
+							String(input.issueNumber),
+							"--json",
+							"number,title,body,url,state,author,createdAt,updatedAt",
+						],
+						{ cwd: project.mainRepoPath },
+					);
+					const raw: unknown = JSON.parse(stdout.trim() || "{}");
+					if (typeof raw !== "object" || raw === null) {
+						throw new Error("Invalid response from gh issue view");
+					}
+
+					const issue = raw as {
+						number: number;
+						title: string;
+						body: string;
+						url: string;
+						state: string;
+						author?: { login: string };
+						createdAt?: string;
+						updatedAt?: string;
+					};
+
+					return {
+						number: issue.number,
+						title: issue.title,
+						body: issue.body || "",
+						url: issue.url,
+						state: issue.state === "OPEN" ? "open" : issue.state.toLowerCase(),
+						author: issue.author?.login,
+						createdAt: issue.createdAt,
+						updatedAt: issue.updatedAt,
+					};
+				} catch (err) {
+					console.warn(
+						`[getIssueContent] Failed to fetch issue #${input.issueNumber}:`,
+						err,
+					);
+					throw new Error(
+						`Failed to fetch issue #${input.issueNumber}: ${err instanceof Error ? err.message : String(err)}`,
+					);
+				}
+			}),
+
 		selectDirectory: publicProcedure
 			.input(
 				z.object({

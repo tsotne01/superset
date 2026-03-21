@@ -40,7 +40,7 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { GoGitBranch } from "react-icons/go";
+import { GoGitBranch, GoIssueOpened } from "react-icons/go";
 import { HiCheck, HiChevronUpDown } from "react-icons/hi2";
 import { LuFolderGit, LuFolderOpen, LuGitPullRequest } from "react-icons/lu";
 import { SiLinear } from "react-icons/si";
@@ -68,6 +68,8 @@ import {
 import { sanitizeBranchNameWithMaxLength } from "shared/utils/branch";
 import type { LinkedPR } from "../../NewWorkspaceModalDraftContext";
 import { useNewWorkspaceModalDraft } from "../../NewWorkspaceModalDraftContext";
+import { GitHubIssueLinkCommand } from "./components/GitHubIssueLinkCommand";
+import { LinkedGitHubIssuePill } from "./components/LinkedGitHubIssuePill";
 import { LinkedPRPill } from "./components/LinkedPRPill";
 import { PRLinkCommand } from "./components/PRLinkCommand";
 
@@ -108,8 +110,12 @@ export function PromptGroup(props: PromptGroupProps) {
 
 const PlusMenu = forwardRef<
 	HTMLDivElement,
-	{ onOpenIssueLink: () => void; onOpenPRLink: () => void }
->(function PlusMenu({ onOpenIssueLink, onOpenPRLink }, ref) {
+	{
+		onOpenIssueLink: () => void;
+		onOpenGitHubIssue: () => void;
+		onOpenPRLink: () => void;
+	}
+>(function PlusMenu({ onOpenIssueLink, onOpenGitHubIssue, onOpenPRLink }, ref) {
 	const attachments = usePromptInputAttachments();
 
 	return (
@@ -128,6 +134,10 @@ const PlusMenu = forwardRef<
 					<DropdownMenuItem onSelect={onOpenIssueLink}>
 						<SiLinear className="size-4" />
 						Link issue
+					</DropdownMenuItem>
+					<DropdownMenuItem onSelect={onOpenGitHubIssue}>
+						<GoIssueOpened className="size-4" />
+						Link GitHub issue
 					</DropdownMenuItem>
 					<DropdownMenuItem onSelect={onOpenPRLink}>
 						<LuGitPullRequest className="size-4" />
@@ -392,6 +402,7 @@ function PromptGroupInner({
 	const platform = useHotkeysStore((state) => state.platform);
 	const modKey = platform === "darwin" ? "⌘" : "Ctrl";
 	const isNewWorkspaceModalOpen = useNewWorkspaceModalOpen();
+	const utils = electronTrpc.useUtils();
 	const {
 		closeAndResetDraft,
 		closeModal,
@@ -439,6 +450,7 @@ function PromptGroupInner({
 			agentsReady: agentPresetsQuery.isFetched,
 		});
 	const [issueLinkOpen, setIssueLinkOpen] = useState(false);
+	const [gitHubIssueLinkOpen, setGitHubIssueLinkOpen] = useState(false);
 	const [prLinkOpen, setPRLinkOpen] = useState(false);
 	const plusMenuRef = useRef<HTMLDivElement>(null);
 	const submitStartedRef = useRef(false);
@@ -624,7 +636,7 @@ function PromptGroupInner({
 				}
 			}
 
-			let convertedFiles: ConvertedFile[] | undefined;
+			let convertedFiles: ConvertedFile[] = [];
 			if (detachedFiles.length > 0) {
 				try {
 					convertedFiles = await Promise.all(
@@ -645,9 +657,74 @@ function PromptGroupInner({
 				}
 			}
 
+			// Fetch and attach GitHub issue content
+			const githubIssues = linkedIssues.filter(
+				(issue): issue is typeof issue & { number: number } =>
+					issue.source === "github" && typeof issue.number === "number",
+			);
+			if (githubIssues.length > 0 && projectId) {
+				try {
+					const issueContents = await Promise.all(
+						githubIssues.map(async (issue) => {
+							try {
+								const content =
+									await utils.client.projects.getIssueContent.query({
+										projectId,
+										issueNumber: issue.number,
+									});
+
+								const markdown = `# GitHub Issue #${content.number}: ${content.title}
+
+**URL:** ${content.url}
+**State:** ${content.state}
+**Author:** ${content.author || "Unknown"}
+**Created:** ${content.createdAt ? new Date(content.createdAt).toLocaleString() : "Unknown"}
+**Updated:** ${content.updatedAt ? new Date(content.updatedAt).toLocaleString() : "Unknown"}
+
+---
+
+${content.body}`;
+
+								// Convert markdown to base64 data URL
+								const base64 = btoa(
+									encodeURIComponent(markdown).replace(
+										/%([0-9A-F]{2})/g,
+										(_, p1) => String.fromCharCode(Number.parseInt(p1, 16)),
+									),
+								);
+
+								return {
+									data: `data:text/markdown;base64,${base64}`,
+									mediaType: "text/markdown",
+									filename: `github-issue-${content.number}.md`,
+								};
+							} catch (err) {
+								console.warn(
+									`Failed to fetch GitHub issue #${issue.number}:`,
+									err,
+								);
+								return null;
+							}
+						}),
+					);
+
+					// Add successfully fetched issues to convertedFiles
+					const validIssueFiles = issueContents.filter(
+						(file) => file !== null,
+					) as ConvertedFile[];
+					convertedFiles = [...convertedFiles, ...validIssueFiles];
+				} catch (err) {
+					console.warn("Failed to fetch GitHub issue contents:", err);
+					// Don't block workspace creation if issue fetching fails
+				}
+			}
+
 			let launchRequest: AgentLaunchRequest | null = null;
 			try {
-				launchRequest = buildLaunchRequest(trimmedPrompt, convertedFiles);
+				launchRequest = buildLaunchRequest(
+					trimmedPrompt,
+					convertedFiles.length > 0 ? convertedFiles : undefined,
+				);
 			} catch (error) {
 				clearPendingWorkspace(pendingWorkspaceId);
 				toast.error(
@@ -747,6 +824,8 @@ function PromptGroupInner({
 		trimmedPrompt,
 		workspaceName,
 		workspaceNameEdited,
+		linkedIssues.filter,
+		utils.client.projects.getIssueContent.query,
 	]);
 
 	const handlePromptSubmit = useCallback(() => {
@@ -760,6 +839,24 @@ function PromptGroupInner({
 	const addLinkedIssue = (slug: string, title: string) => {
 		if (linkedIssues.some((issue) => issue.slug === slug)) return;
 		updateDraft({ linkedIssues: [...linkedIssues, { slug, title }] });
+	};
+
+	const addLinkedGitHubIssue = (
+		issueNumber: number,
+		title: string,
+		url: string,
+		state: string,
+	) => {
+		const issue = {
+			slug: `#${issueNumber}`,
+			title,
+			source: "github" as const,
+			url,
+			number: issueNumber,
+			state,
+		};
+		if (linkedIssues.some((i) => i.slug === issue.slug)) return;
+		updateDraft({ linkedIssues: [...linkedIssues, issue] });
 	};
 
 	const removeLinkedIssue = (slug: string) => {
@@ -860,11 +957,20 @@ function PromptGroupInner({
 									exit={{ opacity: 0, scale: 0.8 }}
 									transition={{ duration: 0.15 }}
 								>
-									<LinkedIssuePill
-										slug={issue.slug}
-										title={issue.title}
-										onRemove={() => removeLinkedIssue(issue.slug)}
-									/>
+									{issue.source === "github" ? (
+										<LinkedGitHubIssuePill
+											issueNumber={issue.number ?? 0}
+											title={issue.title}
+											state={issue.state ?? "open"}
+											onRemove={() => removeLinkedIssue(issue.slug)}
+										/>
+									) : (
+										<LinkedIssuePill
+											slug={issue.slug}
+											title={issue.title}
+											onRemove={() => removeLinkedIssue(issue.slug)}
+										/>
+									)}
 								</motion.div>
 							))}
 						</AnimatePresence>
@@ -907,6 +1013,9 @@ function PromptGroupInner({
 							onOpenIssueLink={() =>
 								requestAnimationFrame(() => setIssueLinkOpen(true))
 							}
+							onOpenGitHubIssue={() =>
+								requestAnimationFrame(() => setGitHubIssueLinkOpen(true))
+							}
 							onOpenPRLink={() =>
 								requestAnimationFrame(() => setPRLinkOpen(true))
 							}
@@ -917,6 +1026,20 @@ function PromptGroupInner({
 							open={issueLinkOpen}
 							onOpenChange={setIssueLinkOpen}
 							onSelect={addLinkedIssue}
+						/>
+						<GitHubIssueLinkCommand
+							open={gitHubIssueLinkOpen}
+							onOpenChange={setGitHubIssueLinkOpen}
+							onSelect={(issue) =>
+								addLinkedGitHubIssue(
+									issue.issueNumber,
+									issue.title,
+									issue.url,
+									issue.state,
+								)
+							}
+							projectId={projectId}
+							anchorRef={plusMenuRef}
 						/>
 						<PRLinkCommand
 							open={prLinkOpen}
