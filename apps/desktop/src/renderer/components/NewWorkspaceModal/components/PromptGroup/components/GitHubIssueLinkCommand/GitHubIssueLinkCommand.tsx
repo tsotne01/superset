@@ -79,12 +79,13 @@ export function GitHubIssueLinkCommand({
 		if (!searchQuery) {
 			return issuesWithSearchField.slice(0, MAX_RESULTS);
 		}
+		const trimmedQuery = searchQuery.trim();
 		const urlMatch = issuesWithSearchField.find(
-			(issue) => issue.url === searchQuery,
+			(issue) => issue.url === trimmedQuery,
 		);
 		if (urlMatch) return [urlMatch];
 		return issueFuse
-			.search(searchQuery, { limit: MAX_RESULTS })
+			.search(trimmedQuery, { limit: MAX_RESULTS })
 			.map((r) => r.item);
 	}, [issuesWithSearchField, searchQuery, issueFuse]);
 

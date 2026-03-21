@@ -383,7 +383,7 @@ export const createProjectsRouter = (getWindow: () => BrowserWindow | null) => {
 							"--json",
 							"number,title,url,state,labels",
 						],
-						{ cwd: project.mainRepoPath },
+						{ cwd: project.mainRepoPath, timeout: 10000 },
 					);
 					const raw: unknown = JSON.parse(stdout.trim() || "[]");
 
@@ -431,7 +431,10 @@ export const createProjectsRouter = (getWindow: () => BrowserWindow | null) => {
 					.where(eq(projects.id, input.projectId))
 					.get();
 				if (!project) {
-					throw new Error(`Project ${input.projectId} not found`);
+					throw new TRPCError({
+						code: "NOT_FOUND",
+						message: `Project ${input.projectId} not found`,
+					});
 				}
 
 				try {
@@ -444,7 +447,7 @@ export const createProjectsRouter = (getWindow: () => BrowserWindow | null) => {
 							"--json",
 							"number,title,body,url,state,author,createdAt,updatedAt",
 						],
-						{ cwd: project.mainRepoPath },
+						{ cwd: project.mainRepoPath, timeout: 10000 },
 					);
 					const raw: unknown = JSON.parse(stdout.trim() || "{}");
 
@@ -477,9 +480,10 @@ export const createProjectsRouter = (getWindow: () => BrowserWindow | null) => {
 						`[getIssueContent] Failed to fetch issue #${input.issueNumber}:`,
 						err,
 					);
-					throw new Error(
-						`Failed to fetch issue #${input.issueNumber}: ${err instanceof Error ? err.message : String(err)}`,
-					);
+					throw new TRPCError({
+						code: "INTERNAL_SERVER_ERROR",
+						message: `Failed to fetch issue #${input.issueNumber}: ${err instanceof Error ? err.message : String(err)}`,
+					});
 				}
 			}),
 
