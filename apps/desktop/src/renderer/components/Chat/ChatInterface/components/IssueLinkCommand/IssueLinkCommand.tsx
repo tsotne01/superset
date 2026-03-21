@@ -24,7 +24,12 @@ const MAX_RESULTS = 20;
 type IssueLinkCommandProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	onSelect: (slug: string, title: string, taskId: string, url?: string) => void;
+	onSelect: (
+		slug: string,
+		title: string,
+		taskId: string | undefined,
+		url?: string,
+	) => void;
 } & (
 	| { variant?: "dialog" }
 	| { variant: "popover"; anchorRef: RefObject<HTMLElement | null> }
@@ -111,7 +116,7 @@ export function IssueLinkCommand(props: IssueLinkCommandProps) {
 	const handleSelect = (
 		slug: string,
 		title: string,
-		taskId: string,
+		taskId: string | undefined,
 		url?: string,
 	) => {
 		onSelect(slug, title, taskId, url);

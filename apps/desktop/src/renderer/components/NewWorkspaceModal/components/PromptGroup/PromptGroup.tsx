@@ -890,7 +890,7 @@ ${sanitizeText(truncatedBody)}`;
 	const addLinkedIssue = (
 		slug: string,
 		title: string,
-		taskId: string,
+		taskId: string | undefined,
 		url?: string,
 	) => {
 		if (linkedIssues.some((issue) => issue.slug === slug)) return;
