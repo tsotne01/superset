@@ -1,4 +1,8 @@
-import type { CheckItem, GitHubStatus } from "@superset/local-db";
+import type {
+	CheckItem,
+	GitHubStatus,
+	PullRequestComment,
+} from "@superset/local-db";
 import { branchExistsOnRemote, getTrackingRemoteNameForWorktree } from "../git";
 import { execGitWithShellPath } from "../git-client";
 import { execWithShellEnv } from "../shell-env";
@@ -217,7 +221,7 @@ export function getPullRequestRepoArgs(
 }
 
 const PR_JSON_FIELDS =
-	"number,title,url,state,isDraft,mergedAt,additions,deletions,headRefOid,headRefName,reviewDecision,statusCheckRollup,reviewRequests";
+	"number,title,url,state,isDraft,mergedAt,additions,deletions,headRefOid,headRefName,reviewDecision,statusCheckRollup,comments,reviewRequests";
 
 async function getPRForBranch(
 	worktreePath: string,
@@ -408,8 +412,32 @@ function formatPRData(data: GHPRResponse): NonNullable<GitHubStatus["pr"]> {
 		reviewDecision: mapReviewDecision(data.reviewDecision),
 		checksStatus: computeChecksStatus(data.statusCheckRollup),
 		checks: parseChecks(data.statusCheckRollup),
+		comments: parseComments(data.comments),
 		requestedReviewers: parseReviewRequests(data.reviewRequests),
 	};
+}
+
+function formatShortDuration(durationMs: number): string | undefined {
+	if (!Number.isFinite(durationMs) || durationMs < 0) {
+		return undefined;
+	}
+
+	const totalSeconds = Math.max(1, Math.round(durationMs / 1000));
+	if (totalSeconds < 60) {
+		return `${totalSeconds}s`;
+	}
+
+	const totalMinutes = Math.round(totalSeconds / 60);
+	if (totalMinutes < 60) {
+		return `${totalMinutes}m`;
+	}
+
+	const totalHours = Math.round(totalMinutes / 60);
+	if (totalHours < 24) {
+		return `${totalHours}h`;
+	}
+
+	return `${Math.round(totalHours / 24)}d`;
 }
 
 function parseReviewRequests(
@@ -466,8 +494,48 @@ function parseChecks(rollup: GHPRResponse["statusCheckRollup"]): CheckItem[] {
 			status = "pending";
 		}
 
-		return { name, status, url };
+		let durationText: string | undefined;
+		if (ctx.startedAt) {
+			const startedAt = Date.parse(ctx.startedAt);
+			const completedAt = ctx.completedAt
+				? Date.parse(ctx.completedAt)
+				: Date.now();
+			if (!Number.isNaN(startedAt) && !Number.isNaN(completedAt)) {
+				durationText = formatShortDuration(completedAt - startedAt);
+			}
+		}
+
+		return { name, status, url, durationText };
 	});
+}
+
+function parseComments(
+	comments: GHPRResponse["comments"],
+): PullRequestComment[] {
+	if (!comments || comments.length === 0) {
+		return [];
+	}
+
+	return comments
+		.map((comment, index) => {
+			const createdAt = comment.createdAt
+				? new Date(comment.createdAt).getTime()
+				: undefined;
+			const authorLogin = comment.author?.login || "github";
+			const id =
+				comment.id ||
+				comment.url ||
+				`${authorLogin}-${createdAt ?? "unknown"}-${index}`;
+
+			return {
+				id,
+				authorLogin,
+				body: comment.body ?? "",
+				createdAt: Number.isNaN(createdAt) ? undefined : createdAt,
+				url: comment.url,
+			};
+		})
+		.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
 }
 
 /**

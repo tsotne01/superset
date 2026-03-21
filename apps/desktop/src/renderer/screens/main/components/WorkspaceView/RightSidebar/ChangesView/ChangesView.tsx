@@ -8,6 +8,7 @@ import {
 } from "@superset/ui/alert-dialog";
 import { Button } from "@superset/ui/button";
 import { toast } from "@superset/ui/sonner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@superset/ui/tabs";
 import { useParams } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { electronTrpc } from "renderer/lib/electron-trpc";
@@ -25,7 +26,7 @@ import type { FileSystemChangeEvent } from "shared/file-tree-types";
 import { CategorySection } from "./components/CategorySection";
 import { ChangesHeader } from "./components/ChangesHeader";
 import { CommitInput } from "./components/CommitInput";
-import { PRChecksStatus } from "./components/PRChecksStatus";
+import { ReviewPanel } from "./components/ReviewPanel";
 import { useOrderedSections } from "./hooks";
 import { getPRActionState, shouldAutoCreatePRAfterPublish } from "./utils";
 
@@ -45,6 +46,8 @@ interface PendingChangesRefresh {
 	invalidateBranches: boolean;
 	invalidateSelectedFile: boolean;
 }
+
+type ChangesSidebarTab = "diffs" | "review";
 
 function eventTargetsSelectedFile(
 	event: FileSystemChangeEvent,
@@ -256,6 +259,7 @@ export function ChangesView({
 	const [showDiscardUnstagedDialog, setShowDiscardUnstagedDialog] =
 		useState(false);
 	const [showDiscardStagedDialog, setShowDiscardStagedDialog] = useState(false);
+	const [activeTab, setActiveTab] = useState<ChangesSidebarTab>("diffs");
 	const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const pendingRefreshRef = useRef<PendingChangesRefresh>({
 		invalidateBranches: false,
@@ -299,6 +303,7 @@ export function ChangesView({
 	// biome-ignore lint/correctness/useExhaustiveDependencies: reset on workspace change
 	useEffect(() => {
 		setExpandedCommits(new Set());
+		setActiveTab("diffs");
 	}, [worktreePath]);
 
 	useEffect(() => {
@@ -648,6 +653,7 @@ export function ChangesView({
 				onRefresh={handleRefresh}
 				viewMode={fileListViewMode}
 				onViewModeChange={setFileListViewMode}
+				showViewModeToggle={activeTab === "diffs"}
 				worktreePath={worktreePath}
 				pr={githubStatus?.pr ?? null}
 				isPRStatusLoading={isGitHubStatusLoading}
@@ -664,47 +670,74 @@ export function ChangesView({
 					stashPopMutation.isPending
 				}
 			/>
-
-			<div className="border-b border-border">
-				{githubStatus?.pr && <PRChecksStatus pr={githubStatus.pr} />}
-				<CommitInput
-					worktreePath={worktreePath}
-					hasStagedChanges={hasStagedChanges}
-					pushCount={status.pushCount}
-					pullCount={status.pullCount}
-					hasUpstream={status.hasUpstream}
-					hasExistingPR={hasExistingPR}
-					canCreatePR={prActionState.canCreatePR}
-					shouldAutoCreatePRAfterPublish={shouldAutoCreatePR}
-					prUrl={prUrl}
-					onRefresh={handleRefresh}
-				/>
-			</div>
-
-			{!hasChanges ? (
-				<div className="flex-1 flex items-center justify-center text-muted-foreground text-sm px-4 text-center">
-					No changes detected
+			<Tabs
+				value={activeTab}
+				onValueChange={(value) => setActiveTab(value as ChangesSidebarTab)}
+				className="flex flex-1 min-h-0 flex-col gap-0"
+			>
+				<div className="border-b border-border px-2 pb-1.5">
+					<TabsList className="h-7 w-full">
+						<TabsTrigger value="diffs" className="text-xs">
+							Diffs
+						</TabsTrigger>
+						<TabsTrigger value="review" className="text-xs">
+							Review
+						</TabsTrigger>
+					</TabsList>
 				</div>
-			) : (
-				<div className="flex-1 overflow-y-auto" data-changes-scroll-container>
-					{orderedSections
-						.filter((section) => section.count > 0)
-						.map((section) => (
-							<CategorySection
-								key={section.id}
-								id={section.id}
-								title={section.title}
-								count={section.count}
-								isExpanded={section.isExpanded}
-								onToggle={section.onToggle}
-								actions={section.actions}
-								onMove={moveSection}
-							>
-								{section.content}
-							</CategorySection>
-						))}
-				</div>
-			)}
+
+				<TabsContent
+					value="diffs"
+					className="mt-0 flex min-h-0 flex-1 flex-col"
+				>
+					<div className="border-b border-border">
+						<CommitInput
+							worktreePath={worktreePath}
+							hasStagedChanges={hasStagedChanges}
+							pushCount={status.pushCount}
+							pullCount={status.pullCount}
+							hasUpstream={status.hasUpstream}
+							hasExistingPR={hasExistingPR}
+							canCreatePR={prActionState.canCreatePR}
+							shouldAutoCreatePRAfterPublish={shouldAutoCreatePR}
+							prUrl={prUrl}
+							onRefresh={handleRefresh}
+						/>
+					</div>
+
+					{!hasChanges ? (
+						<div className="flex flex-1 items-center justify-center px-4 text-center text-sm text-muted-foreground">
+							No changes detected
+						</div>
+					) : (
+						<div
+							className="flex-1 overflow-y-auto"
+							data-changes-scroll-container
+						>
+							{orderedSections
+								.filter((section) => section.count > 0)
+								.map((section) => (
+									<CategorySection
+										key={section.id}
+										id={section.id}
+										title={section.title}
+										count={section.count}
+										isExpanded={section.isExpanded}
+										onToggle={section.onToggle}
+										actions={section.actions}
+										onMove={moveSection}
+									>
+										{section.content}
+									</CategorySection>
+								))}
+						</div>
+					)}
+				</TabsContent>
+
+				<TabsContent value="review" className="mt-0 min-h-0 flex-1">
+					<ReviewPanel pr={githubStatus?.pr ?? null} />
+				</TabsContent>
+			</Tabs>
 
 			<AlertDialog
 				open={showDiscardUnstagedDialog}
