@@ -25,7 +25,7 @@ export function TaskActionMenu({ task, onDelete }: TaskActionMenuProps) {
 	const collections = useCollections();
 	const [open, setOpen] = useState(false);
 
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard } = useCopyToClipboard();
 
 	const handleCopyId = () => {
 		copyToClipboard(task.slug);

@@ -73,7 +73,7 @@ export function TabContentContextMenu({
 	const modKey = getModifierKeyLabel();
 	const hasTerminalActions = !!onClearTerminal || !!onScrollToBottom;
 
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard } = useCopyToClipboard();
 	const [hasSelection, setHasSelection] = useState(false);
 	const [hasClipboard, setHasClipboard] = useState(false);
 

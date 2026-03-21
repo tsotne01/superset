@@ -63,7 +63,7 @@ export function DiffViewerContextMenu({
 	onMoveToNewTab,
 	onEditAtLocation,
 }: DiffViewerContextMenuProps) {
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard } = useCopyToClipboard();
 	const getEditor = useCallback((): CodeEditorAdapter | null => {
 		const container = containerRef.current;
 		if (!container) {

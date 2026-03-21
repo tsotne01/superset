@@ -56,7 +56,7 @@ export function OpenInButton({
 			}
 		},
 	});
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard } = useCopyToClipboard();
 
 	const currentApp = defaultApp ? (getAppOption(defaultApp) ?? null) : null;
 

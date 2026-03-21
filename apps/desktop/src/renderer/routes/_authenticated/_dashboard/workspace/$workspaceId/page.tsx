@@ -374,7 +374,7 @@ function WorkspacePage() {
 	useAppHotkey("OPEN_IN_APP", handleOpenInApp, undefined, [handleOpenInApp]);
 
 	// Copy path shortcut
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard } = useCopyToClipboard();
 	useAppHotkey(
 		"COPY_PATH",
 		() => {

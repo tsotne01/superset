@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 
 /**
@@ -6,8 +6,22 @@ import { electronTrpc } from "renderer/lib/electron-trpc";
  *
  * Unlike `navigator.clipboard.writeText`, this works regardless of
  * document focus — no DOMException when a terminal or webview has focus.
+ *
+ * Returns `{ copyToClipboard, copied }` where `copied` is true for
+ * `timeout` ms after a successful write.
  */
-export function useCopyToClipboard() {
-	const { mutate } = electronTrpc.external.copyPath.useMutation();
-	return useCallback((text: string) => mutate(text), [mutate]);
+export function useCopyToClipboard(timeout = 2000) {
+	const { mutateAsync } = electronTrpc.external.copyPath.useMutation();
+	const [copied, setCopied] = useState(false);
+
+	const copyToClipboard = useCallback(
+		async (text: string) => {
+			await mutateAsync(text);
+			setCopied(true);
+			setTimeout(() => setCopied(false), timeout);
+		},
+		[mutateAsync, timeout],
+	);
+
+	return { copyToClipboard, copied };
 }

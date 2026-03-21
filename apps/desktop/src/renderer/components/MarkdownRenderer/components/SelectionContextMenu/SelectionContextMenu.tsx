@@ -29,7 +29,7 @@ export function SelectionContextMenu<T extends HTMLElement>({
 	children,
 	selectAllContainerRef,
 }: SelectionContextMenuProps<T>) {
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard } = useCopyToClipboard();
 	const [selectionText, setSelectionText] = useState("");
 	const [linkHref, setLinkHref] = useState<string | null>(null);
 

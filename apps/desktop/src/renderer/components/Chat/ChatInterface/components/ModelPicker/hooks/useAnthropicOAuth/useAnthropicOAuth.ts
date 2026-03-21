@@ -146,7 +146,7 @@ export function useAnthropicOAuth({
 		}
 	}, [clearAutoSubmitTimeout, openExternalUrl, startAnthropicOAuthMutation]);
 
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard } = useCopyToClipboard();
 	const copyOAuthUrl = useCallback(() => {
 		if (!oauthUrl) return;
 		copyToClipboard(oauthUrl);

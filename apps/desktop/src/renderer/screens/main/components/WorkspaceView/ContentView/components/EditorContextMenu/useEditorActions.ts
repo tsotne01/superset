@@ -19,7 +19,7 @@ export function useEditorActions({
 	filePath,
 	editable = true,
 }: UseEditorActionsProps): EditorActions {
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard } = useCopyToClipboard();
 
 	const handleCut = useCallback(() => {
 		const editor = getEditor();

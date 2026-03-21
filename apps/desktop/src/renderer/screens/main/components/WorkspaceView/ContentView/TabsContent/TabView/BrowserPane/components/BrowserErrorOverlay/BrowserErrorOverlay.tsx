@@ -58,7 +58,7 @@ export function BrowserErrorOverlay({
 		setShowDetails((prev) => !prev);
 	}, []);
 
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard } = useCopyToClipboard();
 	const copyDetails = useCallback(() => {
 		copyToClipboard(detailsText);
 	}, [detailsText, copyToClipboard]);

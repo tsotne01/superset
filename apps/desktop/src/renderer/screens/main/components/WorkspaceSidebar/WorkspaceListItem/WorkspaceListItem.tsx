@@ -217,10 +217,10 @@ export function WorkspaceListItem({
 		if (worktreePath) openInFinder.mutate(worktreePath);
 	};
 
-	const copyToClipboard = useCopyToClipboard();
-	const handleCopyPath = () => {
+	const { copyToClipboard } = useCopyToClipboard();
+	const handleCopyPath = async () => {
 		if (!worktreePath) return;
-		copyToClipboard(worktreePath);
+		await copyToClipboard(worktreePath);
 		toast.success("Path copied to clipboard");
 	};
 

@@ -30,7 +30,7 @@ export function useChatRawSnapshot({
 		);
 	}, []);
 
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard } = useCopyToClipboard();
 
 	const handleCopyRawSnapshot = useCallback(() => {
 		const rawSnapshot = rawSnapshotRef.current;

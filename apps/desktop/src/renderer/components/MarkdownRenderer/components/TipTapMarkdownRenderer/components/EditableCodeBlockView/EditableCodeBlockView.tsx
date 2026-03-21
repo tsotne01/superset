@@ -19,7 +19,6 @@ export function EditableCodeBlockView({
 	updateAttributes,
 	extension,
 }: NodeViewProps) {
-	const [copied, setCopied] = useState(false);
 	const [menuOpen, setMenuOpen] = useState(false);
 
 	const attrs = node.attrs as { language?: string };
@@ -31,11 +30,9 @@ export function EditableCodeBlockView({
 		currentLanguage,
 	);
 
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard, copied } = useCopyToClipboard();
 	const handleCopy = () => {
 		copyToClipboard(node.textContent);
-		setCopied(true);
-		setTimeout(() => setCopied(false), 2000);
 	};
 
 	const handleLanguageChange = (language: string) => {

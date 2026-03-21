@@ -37,7 +37,7 @@ function CommitHeader({
 	message: string;
 	date: Date;
 }) {
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard } = useCopyToClipboard();
 	const handleCopyCommitHash = () => {
 		copyToClipboard(hash);
 	};

@@ -63,7 +63,7 @@ export function UserMessage({
 		},
 		[addFileViewerPane, workspaceId],
 	);
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard } = useCopyToClipboard();
 	const handleCopy = useCallback(() => {
 		if (!fullText) return;
 		copyToClipboard(fullText);

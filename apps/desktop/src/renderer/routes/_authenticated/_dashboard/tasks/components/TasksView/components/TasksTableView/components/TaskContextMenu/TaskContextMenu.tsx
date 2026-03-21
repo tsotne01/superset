@@ -88,7 +88,7 @@ export function TaskContextMenu({
 		}
 	};
 
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard } = useCopyToClipboard();
 
 	const handleCopyId = () => {
 		copyToClipboard(task.slug);

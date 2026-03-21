@@ -52,8 +52,6 @@ export function ApiKeysSettings({ visibleItems }: ApiKeysSettingsProps) {
 	const [showNewKeyDialog, setShowNewKeyDialog] = useState(false);
 	const [newKeyName, setNewKeyName] = useState("");
 	const [newKeyValue, setNewKeyValue] = useState("");
-	const [copied, setCopied] = useState(false);
-
 	const { data: apiKeys, isLoading } = useLiveQuery(
 		(q) => q.from({ apiKeys: collections.apiKeys }),
 		[collections],
@@ -101,11 +99,9 @@ export function ApiKeysSettings({ visibleItems }: ApiKeysSettingsProps) {
 		});
 	};
 
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard, copied } = useCopyToClipboard();
 	const handleCopyKey = () => {
 		copyToClipboard(newKeyValue);
-		setCopied(true);
-		setTimeout(() => setCopied(false), 2000);
 	};
 
 	const formatDate = (date: Date | string | null) => {

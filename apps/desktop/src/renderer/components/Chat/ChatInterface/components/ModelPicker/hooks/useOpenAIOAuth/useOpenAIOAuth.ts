@@ -100,7 +100,7 @@ export function useOpenAIOAuth({
 		}
 	}, [startOpenAIOAuthMutation]);
 
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard } = useCopyToClipboard();
 	const copyOAuthUrl = useCallback(() => {
 		if (!oauthUrl) return;
 		copyToClipboard(oauthUrl);

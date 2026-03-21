@@ -1,7 +1,7 @@
 import { ToggleGroup, ToggleGroupItem } from "@superset/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
 import { cn } from "@superset/ui/utils";
-import { useState } from "react";
+
 import {
 	TbFold,
 	TbLayoutSidebarRightFilled,
@@ -55,13 +55,10 @@ export function FileViewerToolbar({
 	onPin,
 	onClosePane,
 }: FileViewerToolbarProps) {
-	const copyToClipboard = useCopyToClipboard();
-	const [copied, setCopied] = useState(false);
+	const { copyToClipboard, copied } = useCopyToClipboard(1500);
 
 	const handleCopyPath = () => {
 		copyToClipboard(filePath);
-		setCopied(true);
-		setTimeout(() => setCopied(false), 1500);
 	};
 	return (
 		<div className="flex h-full w-full items-center justify-between px-3">

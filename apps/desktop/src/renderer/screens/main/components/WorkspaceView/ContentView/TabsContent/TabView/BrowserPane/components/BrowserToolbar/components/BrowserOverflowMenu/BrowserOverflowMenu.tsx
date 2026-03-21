@@ -42,7 +42,7 @@ export function BrowserOverflowMenu({
 		reloadMutation.mutate({ paneId, hard: true });
 	};
 
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard } = useCopyToClipboard();
 
 	const handleCopyUrl = () => {
 		if (currentUrl) {

@@ -37,7 +37,7 @@ export function usePathActions({
 				}),
 		});
 
-	const copyToClipboard = useCopyToClipboard();
+	const { copyToClipboard } = useCopyToClipboard();
 
 	const copyPath = useCallback(() => {
 		if (absolutePath) {
