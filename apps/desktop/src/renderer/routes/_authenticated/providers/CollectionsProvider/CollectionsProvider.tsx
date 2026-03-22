@@ -1,5 +1,3 @@
-import { FEATURE_FLAGS } from "@superset/shared/constants";
-import { useFeatureFlagEnabled } from "posthog-js/react";
 import {
 	createContext,
 	type ReactNode,
@@ -21,12 +19,10 @@ const CollectionsContext = createContext<CollectionsContextType | null>(null);
 
 export function preloadActiveOrganizationCollections(
 	activeOrganizationId: string | null | undefined,
-	enableV2Cloud: boolean,
 ): void {
 	if (!activeOrganizationId) return;
 	void preloadCollections(activeOrganizationId, {
 		includeChatCollections: false,
-		enableV2Cloud,
 	}).catch((error) => {
 		console.error(
 			"[collections-provider] Failed to preload active org collections:",
@@ -37,8 +33,6 @@ export function preloadActiveOrganizationCollections(
 
 export function CollectionsProvider({ children }: { children: ReactNode }) {
 	const { data: session, refetch: refetchSession } = authClient.useSession();
-	const isV2CloudEnabled =
-		useFeatureFlagEnabled(FEATURE_FLAGS.V2_CLOUD) ?? false;
 	const [isSwitching, setIsSwitching] = useState(false);
 	const activeOrganizationId = env.SKIP_ENV_VALIDATION
 		? MOCK_ORG_ID
@@ -50,26 +44,21 @@ export function CollectionsProvider({ children }: { children: ReactNode }) {
 			setIsSwitching(true);
 			try {
 				await authClient.organization.setActive({ organizationId });
-				await preloadCollections(organizationId, {
-					enableV2Cloud: isV2CloudEnabled,
-				});
+				await preloadCollections(organizationId);
 				await refetchSession();
 			} finally {
 				setIsSwitching(false);
 			}
 		},
-		[activeOrganizationId, isV2CloudEnabled, refetchSession],
+		[activeOrganizationId, refetchSession],
 	);
 
 	useEffect(() => {
-		preloadActiveOrganizationCollections(
-			activeOrganizationId,
-			isV2CloudEnabled,
-		);
-	}, [activeOrganizationId, isV2CloudEnabled]);
+		preloadActiveOrganizationCollections(activeOrganizationId);
+	}, [activeOrganizationId]);
 
 	const collections = activeOrganizationId
-		? getCollections(activeOrganizationId, isV2CloudEnabled)
+		? getCollections(activeOrganizationId)
 		: null;
 
 	if (!collections || isSwitching) {
