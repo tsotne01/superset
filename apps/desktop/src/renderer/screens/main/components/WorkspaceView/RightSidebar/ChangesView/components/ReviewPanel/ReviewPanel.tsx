@@ -19,6 +19,7 @@ import {
 	buildCommentClipboardText,
 	checkIconConfig,
 	checkSummaryIconConfig,
+	countOpenPullRequestComments,
 	formatShortAge,
 	getCommentAvatarFallback,
 	getCommentCopyActionKey,
@@ -173,7 +174,9 @@ export function ReviewPanel({
 		resolvedComments.length > 0
 			? [...activeComments, ...resolvedComments]
 			: activeComments;
-	const commentsCountLabel = isCommentsLoading ? "..." : comments.length;
+	const commentsCountLabel = isCommentsLoading
+		? "..."
+		: countOpenPullRequestComments(comments);
 	const copyAllCommentsLabel =
 		copiedActionKey === ALL_COMMENTS_COPY_ACTION_KEY ? "Copied" : "Copy all";
 

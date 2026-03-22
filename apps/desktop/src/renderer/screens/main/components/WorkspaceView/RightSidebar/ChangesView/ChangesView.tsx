@@ -28,6 +28,7 @@ import { CategorySection } from "./components/CategorySection";
 import { ChangesHeader } from "./components/ChangesHeader";
 import { CommitInput } from "./components/CommitInput";
 import { ReviewPanel } from "./components/ReviewPanel";
+import { countOpenPullRequestComments } from "./components/ReviewPanel/utils";
 import { useOrderedSections } from "./hooks";
 import { getPRActionState, shouldAutoCreatePRAfterPublish } from "./utils";
 
@@ -684,7 +685,9 @@ export function ChangesView({
 	}
 
 	const againstMainCount = status.againstBase.length;
-	const reviewCommentCount = activePullRequest ? githubComments.length : 0;
+	const reviewCommentCount = activePullRequest
+		? countOpenPullRequestComments(githubComments)
+		: 0;
 
 	return (
 		<div className="flex flex-col flex-1 min-h-0">

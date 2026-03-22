@@ -183,6 +183,12 @@ export function splitPullRequestComments(comments: PullRequestComment[]): {
 	};
 }
 
+export function countOpenPullRequestComments(
+	comments: PullRequestComment[],
+): number {
+	return comments.filter((comment) => comment.isResolved !== true).length;
+}
+
 export function getCommentCopyActionKey(
 	commentId: PullRequestComment["id"],
 ): string {
