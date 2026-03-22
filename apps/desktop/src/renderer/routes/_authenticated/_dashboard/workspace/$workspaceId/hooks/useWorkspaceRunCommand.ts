@@ -8,7 +8,9 @@ import { electronTrpcClient } from "renderer/lib/trpc-client";
 import { useTabsStore } from "renderer/stores/tabs/store";
 import { useTerminalCallbacksStore } from "renderer/stores/tabs/terminal-callbacks";
 import {
+	clearPaneWorkspaceRunLaunchPending,
 	createWorkspaceRun,
+	markPaneWorkspaceRunLaunchPending,
 	setPaneWorkspaceRunState,
 } from "renderer/stores/tabs/workspace-run";
 
@@ -45,6 +47,7 @@ export function useWorkspaceRunCommand({
 	});
 
 	const isRunning = runPane?.workspaceRun?.state === "running";
+	const canForceStop = isRunning && Boolean(runPane);
 
 	const launchWorkspaceRunInPane = useCallback(
 		async ({
@@ -58,19 +61,24 @@ export function useWorkspaceRunCommand({
 			command: string;
 			cwd?: string;
 		}) => {
-			await launchCommandInPane({
-				paneId,
-				tabId,
-				workspaceId,
-				command,
-				cwd,
-				createOrAttach: (input) =>
-					electronTrpcClient.terminal.createOrAttach.mutate({
-						...input,
-						allowKilled: true,
-					}),
-				write: (input) => electronTrpcClient.terminal.write.mutate(input),
-			});
+			markPaneWorkspaceRunLaunchPending(paneId);
+			try {
+				await launchCommandInPane({
+					paneId,
+					tabId,
+					workspaceId,
+					command,
+					cwd,
+					createOrAttach: (input) =>
+						electronTrpcClient.terminal.createOrAttach.mutate({
+							...input,
+							allowKilled: true,
+						}),
+					write: (input) => electronTrpcClient.terminal.write.mutate(input),
+				});
+			} finally {
+				clearPaneWorkspaceRunLaunchPending(paneId);
+			}
 		},
 		[workspaceId],
 	);
@@ -92,10 +100,7 @@ export function useWorkspaceRunCommand({
 			} catch (error) {
 				const message =
 					error instanceof Error ? error.message : "Unknown error";
-				if (
-					message.includes("not found") ||
-					message.includes("not alive")
-				) {
+				if (message.includes("not found") || message.includes("not alive")) {
 					setPaneWorkspaceRunState(runPane.id, "stopped-by-exit");
 					return;
 				}
@@ -203,8 +208,7 @@ export function useWorkspaceRunCommand({
 			} catch (error) {
 				setPaneWorkspaceRunState(paneId, "stopped-by-exit");
 				toast.error("Failed to run workspace command", {
-					description:
-						error instanceof Error ? error.message : "Unknown error",
+					description: error instanceof Error ? error.message : "Unknown error",
 				});
 			}
 		} catch (error) {
@@ -229,7 +233,32 @@ export function useWorkspaceRunCommand({
 		worktreePath,
 	]);
 
+	const forceStopWorkspaceRun = useCallback(async () => {
+		if (!runPane || !isRunning || isStartingRef.current) return;
+
+		setIsPending(true);
+		try {
+			await electronTrpcClient.terminal.kill.mutate({
+				paneId: runPane.id,
+			});
+			setPaneWorkspaceRunState(runPane.id, "stopped-by-user");
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			if (message.includes("not found") || message.includes("not alive")) {
+				setPaneWorkspaceRunState(runPane.id, "stopped-by-exit");
+				return;
+			}
+			toast.error("Failed to force stop workspace run command", {
+				description: message,
+			});
+		} finally {
+			setIsPending(false);
+		}
+	}, [isRunning, runPane]);
+
 	return {
+		canForceStop,
+		forceStopWorkspaceRun,
 		isRunning,
 		isPending,
 		toggleWorkspaceRun,

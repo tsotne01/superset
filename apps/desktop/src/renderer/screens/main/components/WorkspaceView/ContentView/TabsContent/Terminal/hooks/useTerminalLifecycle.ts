@@ -375,10 +375,7 @@ export function useTerminalLifecycle({
 											error,
 										);
 										if (workspaceRun) {
-											setPaneWorkspaceRunState(
-												paneId,
-												"stopped-by-exit",
-											);
+											setPaneWorkspaceRunState(paneId, "stopped-by-exit");
 										}
 										setConnectionError(
 											error instanceof Error
@@ -502,19 +499,22 @@ export function useTerminalLifecycle({
 
 		const initialCwd = paneInitialCwdRef.current;
 
-		const { workspaceRun: paneWorkspaceRun, isNewWorkspaceRun } =
-			resolveWorkspaceRunAttachMode(paneId, defaultRestartCommandRef.current);
+		const {
+			workspaceRun: paneWorkspaceRun,
+			isNewWorkspaceRun,
+			restartCommand: workspaceRunRestartCommand,
+		} = resolveWorkspaceRunAttachMode(paneId, defaultRestartCommandRef.current);
 
 		const cancelInitialAttach = scheduleTerminalAttach({
 			paneId,
 			priority: isFocusedRef.current ? 0 : 1,
 			run: (done) => {
-				const startAttach = () => {
+				const startAttach = (commandToRunAfterAttach?: string) => {
 					if (attachCanceled) return;
 					if (attachInFlightByPane.has(paneId)) {
 						cancelAttachWait = waitForAttachClear(paneId, () => {
 							if (attachCanceled || isUnmounted) return;
-							startAttach();
+							startAttach(commandToRunAfterAttach);
 						});
 						return;
 					}
@@ -546,7 +546,9 @@ export function useTerminalLifecycle({
 							cols: xterm.cols,
 							rows: xterm.rows,
 							cwd: initialCwd,
-							...(isNewWorkspaceRun && { skipColdRestore: true }),
+							...((isNewWorkspaceRun || Boolean(commandToRunAfterAttach)) && {
+								skipColdRestore: true,
+							}),
 						},
 						{
 							onSuccess: (result) => {
@@ -588,6 +590,29 @@ export function useTerminalLifecycle({
 
 								pendingInitialStateRef.current = result;
 								maybeApplyInitialState();
+
+								if (!commandToRunAfterAttach) {
+									return;
+								}
+
+								void writeWorkspaceRunCommand(commandToRunAfterAttach).catch(
+									(error) => {
+										console.error(
+											"[Terminal] Failed to write workspace run command after attach:",
+											error,
+										);
+										if (paneWorkspaceRun) {
+											setPaneWorkspaceRunState(paneId, "stopped-by-exit");
+										}
+										setConnectionError(
+											error instanceof Error
+												? error.message
+												: "Failed to write workspace run command",
+										);
+										isStreamReadyRef.current = true;
+										flushPendingEvents();
+									},
+								);
 							},
 							onError: (error) => {
 								if (!isAttachActive()) return;
@@ -641,6 +666,7 @@ export function useTerminalLifecycle({
 						wasKilledByUserRef,
 						isStreamReadyRef,
 						setExitStatus,
+						restartCommand: workspaceRunRestartCommand,
 					});
 					return;
 				}

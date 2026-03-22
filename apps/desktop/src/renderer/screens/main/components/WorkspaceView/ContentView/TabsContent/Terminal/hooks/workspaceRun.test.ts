@@ -200,6 +200,97 @@ describe("recoverWorkspaceRunPane", () => {
 		expect(setExitStatus).not.toHaveBeenCalled();
 	});
 
+	it("falls back to attach when session inspection fails for stopped panes", async () => {
+		storeState.panes["pane-2b"] = {
+			workspaceRun: {
+				workspaceId: "ws-2b",
+				state: "stopped-by-user",
+			},
+		};
+		mockGetSessionQuery.mockRejectedValueOnce(new Error("transport down"));
+
+		const xterm = { writeln: mock(() => {}) };
+		const done = mock(() => {});
+		const startAttach = mock(() => {});
+		const setExitStatus = mock(() => {});
+		const isExitedRef = { current: false };
+		const wasKilledByUserRef = { current: false };
+		const isStreamReadyRef = { current: false };
+		const workspaceRun = storeState.panes["pane-2b"]?.workspaceRun;
+		if (!workspaceRun) {
+			throw new Error("Expected pane-2b workspaceRun to exist");
+		}
+
+		const handled = await recoverWorkspaceRunPane({
+			paneId: "pane-2b",
+			workspaceRun,
+			isNewWorkspaceRun: false,
+			xterm,
+			shouldAbort: () => false,
+			startAttach,
+			done,
+			isExitedRef,
+			wasKilledByUserRef,
+			isStreamReadyRef,
+			setExitStatus,
+		});
+
+		expect(handled).toBe(true);
+		expect(startAttach).toHaveBeenCalled();
+		expect(xterm.writeln).not.toHaveBeenCalled();
+		expect(done).not.toHaveBeenCalled();
+		expect(setExitStatus).not.toHaveBeenCalled();
+	});
+
+	it("restarts running panes when their session is gone and a restart command exists", async () => {
+		storeState.panes["pane-2c"] = {
+			workspaceRun: {
+				workspaceId: "ws-2c",
+				state: "running",
+				command: "bun run dev",
+			},
+		};
+		mockGetSessionQuery.mockResolvedValueOnce(null);
+
+		const xterm = { writeln: mock(() => {}) };
+		const done = mock(() => {});
+		const startAttach = mock(() => {});
+		const setExitStatus = mock(() => {});
+		const isExitedRef = { current: false };
+		const wasKilledByUserRef = { current: false };
+		const isStreamReadyRef = { current: false };
+		const workspaceRun = storeState.panes["pane-2c"]?.workspaceRun;
+		if (!workspaceRun) {
+			throw new Error("Expected pane-2c workspaceRun to exist");
+		}
+
+		const handled = await recoverWorkspaceRunPane({
+			paneId: "pane-2c",
+			workspaceRun,
+			isNewWorkspaceRun: false,
+			xterm,
+			shouldAbort: () => false,
+			startAttach,
+			done,
+			isExitedRef,
+			wasKilledByUserRef,
+			isStreamReadyRef,
+			setExitStatus,
+			restartCommand: "bun run dev",
+		});
+
+		expect(handled).toBe(true);
+		expect(startAttach).toHaveBeenCalledWith("bun run dev");
+		expect(xterm.writeln).not.toHaveBeenCalled();
+		expect(done).not.toHaveBeenCalled();
+		expect(setExitStatus).not.toHaveBeenCalled();
+		expect(storeState.panes["pane-2c"]?.workspaceRun).toEqual({
+			workspaceId: "ws-2c",
+			state: "running",
+			command: "bun run dev",
+		});
+	});
+
 	it("preserves the stored run command when updating workspace-run state", () => {
 		storeState.panes["pane-3"] = {
 			workspaceRun: {
