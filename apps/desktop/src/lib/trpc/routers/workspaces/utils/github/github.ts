@@ -5,6 +5,7 @@ import { execWithShellEnv } from "../shell-env";
 import { parseUpstreamRef } from "../upstream-ref";
 import {
 	clearGitHubCachesForWorktree,
+	getCachedPullRequestCommentsState,
 	makePullRequestCommentsCacheKey,
 	readCachedGitHubStatus,
 	readCachedPullRequestComments,
@@ -172,15 +173,11 @@ async function refreshGitHubPRComments({
 	repoNameWithOwner: string;
 	pullRequestNumber: number;
 }): Promise<PullRequestComment[]> {
-	try {
-		return await fetchPullRequestComments({
-			worktreePath,
-			repoNameWithOwner,
-			pullRequestNumber,
-		});
-	} catch {
-		return [];
-	}
+	return fetchPullRequestComments({
+		worktreePath,
+		repoNameWithOwner,
+		pullRequestNumber,
+	});
 }
 
 /**
@@ -220,13 +217,26 @@ export async function fetchGitHubPRComments({
 			repoNameWithOwner,
 			pullRequestNumber: pullRequestTarget.prNumber,
 		});
-		return await readCachedPullRequestComments(cacheKey, () =>
-			refreshGitHubPRComments({
-				worktreePath,
-				repoNameWithOwner,
-				pullRequestNumber: pullRequestTarget.prNumber,
-			}),
-		);
+		try {
+			return await readCachedPullRequestComments(cacheKey, () =>
+				refreshGitHubPRComments({
+					worktreePath,
+					repoNameWithOwner,
+					pullRequestNumber: pullRequestTarget.prNumber,
+				}),
+			);
+		} catch (error) {
+			const cached = getCachedPullRequestCommentsState(cacheKey);
+			if (cached) {
+				console.warn(
+					"[GitHub] Failed to refresh pull request comments; using cached value:",
+					error,
+				);
+				return cached.value;
+			}
+
+			throw error;
+		}
 	} catch {
 		return [];
 	}

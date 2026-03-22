@@ -41,6 +41,7 @@ export function createCachedResource<T>({
 	const cache = new Map<string, CacheEntry<T>>();
 	const inFlight = new Map<string, InFlightEntry<T>>();
 	const requestIds = new Map<string, number>();
+	let nextRequestId = 0;
 
 	function getState(cacheKey: string): CacheState<T> | null {
 		const cached = cache.get(cacheKey);
@@ -68,7 +69,7 @@ export function createCachedResource<T>({
 	function invalidate(cacheKey: string): void {
 		cache.delete(cacheKey);
 		inFlight.delete(cacheKey);
-		requestIds.set(cacheKey, (requestIds.get(cacheKey) ?? 0) + 1);
+		requestIds.delete(cacheKey);
 	}
 
 	function invalidatePrefix(cacheKeyPrefix: string): void {
@@ -86,7 +87,7 @@ export function createCachedResource<T>({
 
 		for (const cacheKey of requestIds.keys()) {
 			if (cacheKey.startsWith(cacheKeyPrefix)) {
-				requestIds.set(cacheKey, (requestIds.get(cacheKey) ?? 0) + 1);
+				requestIds.delete(cacheKey);
 			}
 		}
 	}
@@ -96,17 +97,18 @@ export function createCachedResource<T>({
 		load: () => Promise<T>,
 		shouldCache: (value: T) => boolean,
 	): Promise<T> {
-		const requestId = (requestIds.get(cacheKey) ?? 0) + 1;
+		const requestId = ++nextRequestId;
 		requestIds.set(cacheKey, requestId);
 
 		const promise = (async () => {
 			try {
 				const value = await load();
-				if (
-					shouldCache(value) &&
-					(requestIds.get(cacheKey) ?? 0) === requestId
-				) {
-					set(cacheKey, value);
+				if (requestIds.get(cacheKey) === requestId) {
+					if (shouldCache(value)) {
+						set(cacheKey, value);
+					} else {
+						cache.delete(cacheKey);
+					}
 				}
 
 				return value;
@@ -114,6 +116,10 @@ export function createCachedResource<T>({
 				const current = inFlight.get(cacheKey);
 				if (current?.requestId === requestId) {
 					inFlight.delete(cacheKey);
+				}
+
+				if (requestIds.get(cacheKey) === requestId) {
+					requestIds.delete(cacheKey);
 				}
 			}
 		})();
@@ -128,19 +134,21 @@ export function createCachedResource<T>({
 		options?: CachedResourceReadOptions<T>,
 	): Promise<T> {
 		const shouldCache = options?.shouldCache ?? (() => true);
-		const cached = getState(cacheKey);
-		if (cached?.isFresh) {
-			return cached.value;
-		}
-
 		const currentInFlight = inFlight.get(cacheKey)?.promise ?? null;
 		if (options?.forceFresh) {
 			return currentInFlight ?? startLoad(cacheKey, load, shouldCache);
 		}
 
+		const cached = getState(cacheKey);
+		if (cached?.isFresh) {
+			return cached.value;
+		}
+
 		if (cached) {
 			if (!currentInFlight) {
-				void startLoad(cacheKey, load, shouldCache);
+				startLoad(cacheKey, load, shouldCache).catch((error) => {
+					console.warn("[GitHub] Background cache refresh failed:", error);
+				});
 			}
 
 			return cached.value;

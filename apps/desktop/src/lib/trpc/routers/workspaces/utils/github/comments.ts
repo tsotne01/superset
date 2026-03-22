@@ -303,20 +303,35 @@ async function fetchAdditionalReviewThreadCommentsForThread({
 	let afterCursor: string | null = initialAfterCursor;
 
 	while (afterCursor) {
-		const { stdout } = await execWithShellEnv(
-			"gh",
-			[
-				"api",
-				"graphql",
-				"-f",
-				`query=${REVIEW_THREAD_COMMENTS_QUERY}`,
-				"-F",
-				`threadId=${threadId}`,
-				"-F",
-				`after=${afterCursor}`,
-			],
-			{ cwd: worktreePath },
-		);
+		let stdout: string;
+		try {
+			const result = await execWithShellEnv(
+				"gh",
+				[
+					"api",
+					"graphql",
+					"-f",
+					`query=${REVIEW_THREAD_COMMENTS_QUERY}`,
+					"-F",
+					`threadId=${threadId}`,
+					"-F",
+					`after=${afterCursor}`,
+				],
+				{ cwd: worktreePath },
+			);
+			stdout = result.stdout;
+		} catch (error) {
+			console.warn(
+				"[GitHub] Failed to fetch additional pull request review thread comments:",
+				{
+					error,
+					threadId,
+					worktreePath,
+					afterCursor,
+				},
+			);
+			return reviewComments;
+		}
 		const raw = parseJsonOrNull({
 			stdout,
 			errorLabel:
@@ -386,9 +401,23 @@ async function fetchReviewThreadCommentsForPullRequest(
 			args.push("-F", `after=${afterCursor}`);
 		}
 
-		const { stdout } = await execWithShellEnv("gh", args, {
-			cwd: worktreePath,
-		});
+		let stdout: string;
+		try {
+			const result = await execWithShellEnv("gh", args, {
+				cwd: worktreePath,
+			});
+			stdout = result.stdout;
+		} catch (error) {
+			console.warn("[GitHub] Failed to fetch pull request review threads:", {
+				error,
+				owner,
+				name,
+				pullRequestNumber,
+				worktreePath,
+				afterCursor,
+			});
+			return sortPullRequestComments(reviewComments);
+		}
 		const raw = parseJsonOrNull({
 			stdout,
 			errorLabel:
