@@ -75,7 +75,27 @@ export async function recoverWorkspaceRunPane({
 	};
 
 	if (workspaceRun.state !== "running") {
-		return showExitedState(workspaceRun.state);
+		try {
+			const existingSession =
+				await electronTrpcClient.terminal.getSession.query(paneId);
+			if (shouldAbort()) return true;
+
+			if (existingSession?.isAlive) {
+				startAttach();
+				return true;
+			}
+
+			return showExitedState(workspaceRun.state);
+		} catch (error) {
+			if (shouldAbort()) return true;
+
+			console.warn(
+				`[workspace-run] Failed to inspect session for pane ${paneId}:`,
+				error,
+			);
+			startAttach();
+			return true;
+		}
 	}
 
 	try {

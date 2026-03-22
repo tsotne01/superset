@@ -61,13 +61,18 @@ describe("recoverWorkspaceRunPane", () => {
 		mock.restore();
 	});
 
-	it("does not query session state for panes already stopped by user", async () => {
+	it("reattaches panes stopped by user when the shell is still alive", async () => {
 		storeState.panes["pane-1"] = {
 			workspaceRun: {
 				workspaceId: "ws-1",
 				state: "stopped-by-user",
 			},
 		};
+		mockGetSessionQuery.mockResolvedValueOnce({
+			isAlive: true,
+			cwd: "/tmp/ws-1",
+			lastActive: Date.now(),
+		});
 
 		const xterm = { writeln: mock(() => {}) };
 		const done = mock(() => {});
@@ -96,7 +101,53 @@ describe("recoverWorkspaceRunPane", () => {
 		});
 
 		expect(handled).toBe(true);
-		expect(mockGetSessionQuery).not.toHaveBeenCalled();
+		expect(mockGetSessionQuery).toHaveBeenCalledWith("pane-1");
+		expect(startAttach).toHaveBeenCalled();
+		expect(isExitedRef.current).toBe(false);
+		expect(wasKilledByUserRef.current).toBe(false);
+		expect(isStreamReadyRef.current).toBe(false);
+		expect(setExitStatus).not.toHaveBeenCalled();
+		expect(xterm.writeln).not.toHaveBeenCalled();
+		expect(done).not.toHaveBeenCalled();
+	});
+
+	it("shows exited state for panes stopped by user after the shell has exited", async () => {
+		storeState.panes["pane-1b"] = {
+			workspaceRun: {
+				workspaceId: "ws-1b",
+				state: "stopped-by-user",
+			},
+		};
+		mockGetSessionQuery.mockResolvedValueOnce(null);
+
+		const xterm = { writeln: mock(() => {}) };
+		const done = mock(() => {});
+		const startAttach = mock(() => {});
+		const setExitStatus = mock(() => {});
+		const isExitedRef = { current: false };
+		const wasKilledByUserRef = { current: false };
+		const isStreamReadyRef = { current: false };
+		const workspaceRun = storeState.panes["pane-1b"]?.workspaceRun;
+		if (!workspaceRun) {
+			throw new Error("Expected pane-1b workspaceRun to exist");
+		}
+
+		const handled = await recoverWorkspaceRunPane({
+			paneId: "pane-1b",
+			workspaceRun,
+			isNewWorkspaceRun: false,
+			xterm,
+			shouldAbort: () => false,
+			startAttach,
+			done,
+			isExitedRef,
+			wasKilledByUserRef,
+			isStreamReadyRef,
+			setExitStatus,
+		});
+
+		expect(handled).toBe(true);
+		expect(mockGetSessionQuery).toHaveBeenCalledWith("pane-1b");
 		expect(startAttach).not.toHaveBeenCalled();
 		expect(isExitedRef.current).toBe(true);
 		expect(wasKilledByUserRef.current).toBe(true);
