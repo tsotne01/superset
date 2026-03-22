@@ -19,8 +19,17 @@ interface CacheState<T> {
 	isFresh: boolean;
 }
 
+interface InFlightEntry<T> {
+	promise: Promise<T>;
+	requestId: number;
+}
+
 const githubStatusCache = new Map<string, CacheEntry<GitHubStatus>>();
-const githubStatusInFlight = new Map<string, Promise<GitHubStatus | null>>();
+const githubStatusInFlight = new Map<
+	string,
+	InFlightEntry<GitHubStatus | null>
+>();
+const githubStatusRequestIds = new Map<string, number>();
 
 const pullRequestCommentsCache = new Map<
 	string,
@@ -28,11 +37,13 @@ const pullRequestCommentsCache = new Map<
 >();
 const pullRequestCommentsInFlight = new Map<
 	string,
-	Promise<PullRequestComment[]>
+	InFlightEntry<PullRequestComment[]>
 >();
+const pullRequestCommentsRequestIds = new Map<string, number>();
 
 const repoContextCache = new Map<string, CacheEntry<RepoContext>>();
-const repoContextInFlight = new Map<string, Promise<RepoContext | null>>();
+const repoContextInFlight = new Map<string, InFlightEntry<RepoContext | null>>();
+const repoContextRequestIds = new Map<string, number>();
 
 function getCachedValueState<T>(
 	cache: Map<string, CacheEntry<T>>,
@@ -85,6 +96,68 @@ function clearEntriesWithPrefix<T>(
 	}
 }
 
+function createRequestId(
+	requestIds: Map<string, number>,
+	cacheKey: string,
+): number {
+	const requestId = (requestIds.get(cacheKey) ?? 0) + 1;
+	requestIds.set(cacheKey, requestId);
+	return requestId;
+}
+
+function isCurrentRequest(
+	requestIds: Map<string, number>,
+	cacheKey: string,
+	requestId: number,
+): boolean {
+	return (requestIds.get(cacheKey) ?? 0) === requestId;
+}
+
+function invalidateRequest(
+	requestIds: Map<string, number>,
+	cacheKey: string,
+): void {
+	requestIds.set(cacheKey, (requestIds.get(cacheKey) ?? 0) + 1);
+}
+
+function invalidateRequestsWithPrefix(
+	requestIds: Map<string, number>,
+	cacheKeyPrefix: string,
+): void {
+	for (const cacheKey of requestIds.keys()) {
+		if (cacheKey.startsWith(cacheKeyPrefix)) {
+			invalidateRequest(requestIds, cacheKey);
+		}
+	}
+}
+
+function getInFlightValue<T>(
+	inFlight: Map<string, InFlightEntry<T>>,
+	cacheKey: string,
+): Promise<T> | null {
+	return inFlight.get(cacheKey)?.promise ?? null;
+}
+
+function setInFlightValue<T>(
+	inFlight: Map<string, InFlightEntry<T>>,
+	cacheKey: string,
+	promise: Promise<T>,
+	requestId: number,
+): void {
+	inFlight.set(cacheKey, { promise, requestId });
+}
+
+function clearInFlightValue<T>(
+	inFlight: Map<string, InFlightEntry<T>>,
+	cacheKey: string,
+	requestId: number,
+): void {
+	const entry = inFlight.get(cacheKey);
+	if (entry?.requestId === requestId) {
+		inFlight.delete(cacheKey);
+	}
+}
+
 export function getCachedGitHubStatus(
 	worktreePath: string,
 ): GitHubStatus | null {
@@ -113,18 +186,33 @@ export function setCachedGitHubStatus(
 export function getInFlightGitHubStatus(
 	worktreePath: string,
 ): Promise<GitHubStatus | null> | null {
-	return githubStatusInFlight.get(worktreePath) ?? null;
+	return getInFlightValue(githubStatusInFlight, worktreePath);
+}
+
+export function createGitHubStatusRequestId(worktreePath: string): number {
+	return createRequestId(githubStatusRequestIds, worktreePath);
+}
+
+export function isCurrentGitHubStatusRequest(
+	worktreePath: string,
+	requestId: number,
+): boolean {
+	return isCurrentRequest(githubStatusRequestIds, worktreePath, requestId);
 }
 
 export function setInFlightGitHubStatus(
 	worktreePath: string,
 	promise: Promise<GitHubStatus | null>,
+	requestId: number,
 ): void {
-	githubStatusInFlight.set(worktreePath, promise);
+	setInFlightValue(githubStatusInFlight, worktreePath, promise, requestId);
 }
 
-export function clearInFlightGitHubStatus(worktreePath: string): void {
-	githubStatusInFlight.delete(worktreePath);
+export function clearInFlightGitHubStatus(
+	worktreePath: string,
+	requestId: number,
+): void {
+	clearInFlightValue(githubStatusInFlight, worktreePath, requestId);
 }
 
 export function makePullRequestCommentsCachePrefix(
@@ -173,18 +261,33 @@ export function setCachedPullRequestComments(
 export function getInFlightPullRequestComments(
 	cacheKey: string,
 ): Promise<PullRequestComment[]> | null {
-	return pullRequestCommentsInFlight.get(cacheKey) ?? null;
+	return getInFlightValue(pullRequestCommentsInFlight, cacheKey);
+}
+
+export function createPullRequestCommentsRequestId(cacheKey: string): number {
+	return createRequestId(pullRequestCommentsRequestIds, cacheKey);
+}
+
+export function isCurrentPullRequestCommentsRequest(
+	cacheKey: string,
+	requestId: number,
+): boolean {
+	return isCurrentRequest(pullRequestCommentsRequestIds, cacheKey, requestId);
 }
 
 export function setInFlightPullRequestComments(
 	cacheKey: string,
 	promise: Promise<PullRequestComment[]>,
+	requestId: number,
 ): void {
-	pullRequestCommentsInFlight.set(cacheKey, promise);
+	setInFlightValue(pullRequestCommentsInFlight, cacheKey, promise, requestId);
 }
 
-export function clearInFlightPullRequestComments(cacheKey: string): void {
-	pullRequestCommentsInFlight.delete(cacheKey);
+export function clearInFlightPullRequestComments(
+	cacheKey: string,
+	requestId: number,
+): void {
+	clearInFlightValue(pullRequestCommentsInFlight, cacheKey, requestId);
 }
 
 export function getCachedRepoContext(worktreePath: string): RepoContext | null {
@@ -213,27 +316,48 @@ export function setCachedRepoContext(
 export function getInFlightRepoContext(
 	worktreePath: string,
 ): Promise<RepoContext | null> | null {
-	return repoContextInFlight.get(worktreePath) ?? null;
+	return getInFlightValue(repoContextInFlight, worktreePath);
+}
+
+export function createRepoContextRequestId(worktreePath: string): number {
+	return createRequestId(repoContextRequestIds, worktreePath);
+}
+
+export function isCurrentRepoContextRequest(
+	worktreePath: string,
+	requestId: number,
+): boolean {
+	return isCurrentRequest(repoContextRequestIds, worktreePath, requestId);
 }
 
 export function setInFlightRepoContext(
 	worktreePath: string,
 	promise: Promise<RepoContext | null>,
+	requestId: number,
 ): void {
-	repoContextInFlight.set(worktreePath, promise);
+	setInFlightValue(repoContextInFlight, worktreePath, promise, requestId);
 }
 
-export function clearInFlightRepoContext(worktreePath: string): void {
-	repoContextInFlight.delete(worktreePath);
+export function clearInFlightRepoContext(
+	worktreePath: string,
+	requestId: number,
+): void {
+	clearInFlightValue(repoContextInFlight, worktreePath, requestId);
 }
 
 export function clearGitHubCachesForWorktree(worktreePath: string): void {
 	githubStatusCache.delete(worktreePath);
 	githubStatusInFlight.delete(worktreePath);
+	invalidateRequest(githubStatusRequestIds, worktreePath);
 	repoContextCache.delete(worktreePath);
 	repoContextInFlight.delete(worktreePath);
+	invalidateRequest(repoContextRequestIds, worktreePath);
 
 	const commentsCachePrefix = makePullRequestCommentsCachePrefix(worktreePath);
 	clearEntriesWithPrefix(pullRequestCommentsCache, commentsCachePrefix);
 	clearEntriesWithPrefix(pullRequestCommentsInFlight, commentsCachePrefix);
+	invalidateRequestsWithPrefix(
+		pullRequestCommentsRequestIds,
+		commentsCachePrefix,
+	);
 }

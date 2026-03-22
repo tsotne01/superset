@@ -2,8 +2,10 @@ import { execGitWithShellPath } from "../git-client";
 import { execWithShellEnv } from "../shell-env";
 import {
 	clearInFlightRepoContext,
+	createRepoContextRequestId,
 	getCachedRepoContextState,
 	getInFlightRepoContext,
+	isCurrentRepoContextRequest,
 	setCachedRepoContext,
 	setInFlightRepoContext,
 } from "./cache";
@@ -11,6 +13,7 @@ import { GHRepoResponseSchema, type RepoContext } from "./types";
 
 async function refreshRepoContext(
 	worktreePath: string,
+	requestId: number,
 ): Promise<RepoContext | null> {
 	try {
 		const { stdout } = await execWithShellEnv(
@@ -58,18 +61,33 @@ async function refreshRepoContext(
 			}
 		}
 
-		setCachedRepoContext(worktreePath, context);
+		if (isCurrentRepoContextRequest(worktreePath, requestId)) {
+			setCachedRepoContext(worktreePath, context);
+		}
+
 		return context;
 	} catch (error) {
 		console.warn("[GitHub] Failed to refresh repo context:", error);
 		return null;
 	} finally {
-		clearInFlightRepoContext(worktreePath);
+		clearInFlightRepoContext(worktreePath, requestId);
 	}
+}
+
+function startRepoContextRefresh(
+	worktreePath: string,
+): Promise<RepoContext | null> {
+	const requestId = createRepoContextRequestId(worktreePath);
+	const promise = refreshRepoContext(worktreePath, requestId);
+	setInFlightRepoContext(worktreePath, promise, requestId);
+	return promise;
 }
 
 export async function getRepoContext(
 	worktreePath: string,
+	options?: {
+		forceFresh?: boolean;
+	},
 ): Promise<RepoContext | null> {
 	const cached = getCachedRepoContextState(worktreePath);
 	if (cached?.isFresh) {
@@ -77,10 +95,17 @@ export async function getRepoContext(
 	}
 
 	const inFlight = getInFlightRepoContext(worktreePath);
+	if (options?.forceFresh) {
+		if (inFlight) {
+			return inFlight;
+		}
+
+		return startRepoContextRefresh(worktreePath);
+	}
+
 	if (cached) {
 		if (!inFlight) {
-			const promise = refreshRepoContext(worktreePath);
-			setInFlightRepoContext(worktreePath, promise);
+			startRepoContextRefresh(worktreePath);
 		}
 
 		return cached.value;
@@ -90,9 +115,7 @@ export async function getRepoContext(
 		return inFlight;
 	}
 
-	const promise = refreshRepoContext(worktreePath);
-	setInFlightRepoContext(worktreePath, promise);
-	return promise;
+	return startRepoContextRefresh(worktreePath);
 }
 
 async function getOriginUrl(worktreePath: string): Promise<string | null> {

@@ -1,12 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import type { GitHubStatus, PullRequestComment } from "@superset/local-db";
 import {
+	clearInFlightGitHubStatus,
 	clearGitHubCachesForWorktree,
+	createGitHubStatusRequestId,
+	createPullRequestCommentsRequestId,
+	createRepoContextRequestId,
 	getCachedGitHubStatus,
 	getCachedGitHubStatusState,
+	getInFlightGitHubStatus,
 	getCachedPullRequestComments,
 	getCachedRepoContext,
+	isCurrentGitHubStatusRequest,
+	isCurrentPullRequestCommentsRequest,
+	isCurrentRepoContextRequest,
 	makePullRequestCommentsCacheKey,
+	setInFlightGitHubStatus,
 	setCachedGitHubStatus,
 	setCachedPullRequestComments,
 	setCachedRepoContext,
@@ -97,5 +106,68 @@ describe("getCachedGitHubStatusState", () => {
 			Date.now = originalDateNow;
 			clearGitHubCachesForWorktree(worktreePath);
 		}
+	});
+});
+
+describe("request invalidation", () => {
+	test("invalidates status, repo context, and comments requests on cache clear", () => {
+		const worktreePath = "/tmp/worktrees/review-cache-invalidation-test";
+		const commentsCacheKey = makePullRequestCommentsCacheKey({
+			worktreePath,
+			repoNameWithOwner: "superset-sh/superset",
+			pullRequestNumber: 2724,
+		});
+
+		const statusRequestId = createGitHubStatusRequestId(worktreePath);
+		const repoContextRequestId = createRepoContextRequestId(worktreePath);
+		const commentsRequestId = createPullRequestCommentsRequestId(commentsCacheKey);
+
+		expect(isCurrentGitHubStatusRequest(worktreePath, statusRequestId)).toBe(
+			true,
+		);
+		expect(
+			isCurrentRepoContextRequest(worktreePath, repoContextRequestId),
+		).toBe(true);
+		expect(
+			isCurrentPullRequestCommentsRequest(commentsCacheKey, commentsRequestId),
+		).toBe(true);
+
+		clearGitHubCachesForWorktree(worktreePath);
+
+		expect(isCurrentGitHubStatusRequest(worktreePath, statusRequestId)).toBe(
+			false,
+		);
+		expect(
+			isCurrentRepoContextRequest(worktreePath, repoContextRequestId),
+		).toBe(false);
+		expect(
+			isCurrentPullRequestCommentsRequest(commentsCacheKey, commentsRequestId),
+		).toBe(false);
+	});
+
+	test("does not let an older status refresh clear a newer in-flight request", () => {
+		const worktreePath = "/tmp/worktrees/review-cache-request-order-test";
+		const olderPromise = Promise.resolve<GitHubStatus | null>(null);
+		const newerPromise = Promise.resolve<GitHubStatus | null>({
+			pr: null,
+			repoUrl: "https://github.com/superset-sh/superset",
+			upstreamUrl: "https://github.com/superset-sh/superset",
+			isFork: false,
+			branchExistsOnRemote: true,
+			lastRefreshed: Date.now(),
+		});
+
+		const olderRequestId = createGitHubStatusRequestId(worktreePath);
+		setInFlightGitHubStatus(worktreePath, olderPromise, olderRequestId);
+
+		const newerRequestId = createGitHubStatusRequestId(worktreePath);
+		setInFlightGitHubStatus(worktreePath, newerPromise, newerRequestId);
+
+		clearInFlightGitHubStatus(worktreePath, olderRequestId);
+
+		expect(getInFlightGitHubStatus(worktreePath)).toBe(newerPromise);
+
+		clearInFlightGitHubStatus(worktreePath, newerRequestId);
+		clearGitHubCachesForWorktree(worktreePath);
 	});
 });

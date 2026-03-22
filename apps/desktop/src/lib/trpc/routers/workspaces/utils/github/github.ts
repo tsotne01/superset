@@ -7,10 +7,14 @@ import {
 	clearGitHubCachesForWorktree,
 	clearInFlightGitHubStatus,
 	clearInFlightPullRequestComments,
+	createGitHubStatusRequestId,
+	createPullRequestCommentsRequestId,
 	getCachedGitHubStatusState,
 	getCachedPullRequestCommentsState,
 	getInFlightGitHubStatus,
 	getInFlightPullRequestComments,
+	isCurrentGitHubStatusRequest,
+	isCurrentPullRequestCommentsRequest,
 	makePullRequestCommentsCacheKey,
 	setCachedGitHubStatus,
 	setCachedPullRequestComments,
@@ -46,7 +50,7 @@ function getPullRequestCommentsRepoNameWithOwner(
 async function resolvePullRequestCommentsTarget(
 	worktreePath: string,
 ): Promise<PullRequestCommentsTarget | null> {
-	const repoContext = await getRepoContext(worktreePath);
+	const repoContext = await getRepoContext(worktreePath, { forceFresh: true });
 	if (!repoContext) {
 		return null;
 	}
@@ -91,9 +95,12 @@ export function resolveRemoteBranchNameForGitHubStatus({
 
 async function refreshGitHubPRStatus(
 	worktreePath: string,
+	requestId: number,
 ): Promise<GitHubStatus | null> {
 	try {
-		const repoContext = await getRepoContext(worktreePath);
+		const repoContext = await getRepoContext(worktreePath, {
+			forceFresh: true,
+		});
 		if (!repoContext) {
 			return null;
 		}
@@ -163,16 +170,59 @@ async function refreshGitHubPRStatus(
 			lastRefreshed: Date.now(),
 		};
 
-		setCachedGitHubStatus(worktreePath, result);
+		if (isCurrentGitHubStatusRequest(worktreePath, requestId)) {
+			setCachedGitHubStatus(worktreePath, result);
+		}
+
 		return result;
 	} catch {
 		return null;
 	} finally {
-		clearInFlightGitHubStatus(worktreePath);
+		clearInFlightGitHubStatus(worktreePath, requestId);
 	}
 }
 
 async function refreshGitHubPRComments({
+	worktreePath,
+	repoNameWithOwner,
+	pullRequestNumber,
+	cacheKey,
+	requestId,
+}: {
+	worktreePath: string;
+	repoNameWithOwner: string;
+	pullRequestNumber: number;
+	cacheKey: string;
+	requestId: number;
+}): Promise<PullRequestComment[]> {
+	try {
+		const comments = await fetchPullRequestComments({
+			worktreePath,
+			repoNameWithOwner,
+			pullRequestNumber,
+		});
+		if (isCurrentPullRequestCommentsRequest(cacheKey, requestId)) {
+			setCachedPullRequestComments(cacheKey, comments);
+		}
+
+		return comments;
+	} catch {
+		return [];
+	} finally {
+		clearInFlightPullRequestComments(cacheKey, requestId);
+	}
+}
+
+function startGitHubPRStatusRefresh(
+	worktreePath: string,
+): Promise<GitHubStatus | null> {
+	const requestId = createGitHubStatusRequestId(worktreePath);
+	const promise = refreshGitHubPRStatus(worktreePath, requestId);
+	setInFlightGitHubStatus(worktreePath, promise, requestId);
+	return promise;
+}
+
+function startGitHubPRCommentsRefresh({
 	worktreePath,
 	repoNameWithOwner,
 	pullRequestNumber,
@@ -183,19 +233,16 @@ async function refreshGitHubPRComments({
 	pullRequestNumber: number;
 	cacheKey: string;
 }): Promise<PullRequestComment[]> {
-	try {
-		const comments = await fetchPullRequestComments({
-			worktreePath,
-			repoNameWithOwner,
-			pullRequestNumber,
-		});
-		setCachedPullRequestComments(cacheKey, comments);
-		return comments;
-	} catch {
-		return [];
-	} finally {
-		clearInFlightPullRequestComments(cacheKey);
-	}
+	const requestId = createPullRequestCommentsRequestId(cacheKey);
+	const promise = refreshGitHubPRComments({
+		worktreePath,
+		repoNameWithOwner,
+		pullRequestNumber,
+		cacheKey,
+		requestId,
+	});
+	setInFlightPullRequestComments(cacheKey, promise, requestId);
+	return promise;
 }
 
 /**
@@ -213,8 +260,7 @@ export async function fetchGitHubPRStatus(
 	const inFlight = getInFlightGitHubStatus(worktreePath);
 	if (cached) {
 		if (!inFlight) {
-			const promise = refreshGitHubPRStatus(worktreePath);
-			setInFlightGitHubStatus(worktreePath, promise);
+			startGitHubPRStatusRefresh(worktreePath);
 		}
 
 		return cached.value;
@@ -224,9 +270,7 @@ export async function fetchGitHubPRStatus(
 		return inFlight;
 	}
 
-	const promise = refreshGitHubPRStatus(worktreePath);
-	setInFlightGitHubStatus(worktreePath, promise);
-	return promise;
+	return startGitHubPRStatusRefresh(worktreePath);
 }
 
 export async function fetchGitHubPRComments({
@@ -262,13 +306,12 @@ export async function fetchGitHubPRComments({
 		const inFlight = getInFlightPullRequestComments(cacheKey);
 		if (cached) {
 			if (!inFlight) {
-				const promise = refreshGitHubPRComments({
+				startGitHubPRCommentsRefresh({
 					worktreePath,
 					repoNameWithOwner,
 					pullRequestNumber: pullRequestTarget.prNumber,
 					cacheKey,
 				});
-				setInFlightPullRequestComments(cacheKey, promise);
 			}
 
 			return cached.value;
@@ -278,14 +321,12 @@ export async function fetchGitHubPRComments({
 			return await inFlight;
 		}
 
-		const promise = refreshGitHubPRComments({
+		return await startGitHubPRCommentsRefresh({
 			worktreePath,
 			repoNameWithOwner,
 			pullRequestNumber: pullRequestTarget.prNumber,
 			cacheKey,
 		});
-		setInFlightPullRequestComments(cacheKey, promise);
-		return await promise;
 	} catch {
 		return [];
 	}
