@@ -11,6 +11,7 @@ import {
 	usePromptInputAttachments,
 	useProviderAttachments,
 } from "@superset/ui/ai-elements/prompt-input";
+import { Button } from "@superset/ui/button";
 import {
 	Command,
 	CommandEmpty,
@@ -30,10 +31,11 @@ import { Input } from "@superset/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@superset/ui/popover";
 import { toast } from "@superset/ui/sonner";
 import { cn } from "@superset/ui/utils";
+import { useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import {
 	ArrowUpIcon,
-	Loader2Icon,
+	ExternalLinkIcon,
 	PaperclipIcon,
 	PlusIcon,
 } from "lucide-react";
@@ -45,7 +47,12 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { GoGitBranch } from "react-icons/go";
+import {
+	GoArrowUpRight,
+	GoGitBranch,
+	GoGlobe,
+	GoIssueOpened,
+} from "react-icons/go";
 import { HiCheck, HiChevronUpDown } from "react-icons/hi2";
 import { LuFolderGit, LuFolderOpen, LuGitPullRequest } from "react-icons/lu";
 import { SiLinear } from "react-icons/si";
@@ -56,22 +63,30 @@ import { useAgentLaunchPreferences } from "renderer/hooks/useAgentLaunchPreferen
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { formatRelativeTime } from "renderer/lib/formatRelativeTime";
 import { resolveEffectiveWorkspaceBaseBranch } from "renderer/lib/workspaceBaseBranch";
+import { navigateToWorkspace } from "renderer/routes/_authenticated/_dashboard/utils/workspace-navigation";
 import { ProjectThumbnail } from "renderer/screens/main/components/WorkspaceSidebar/ProjectSection/ProjectThumbnail";
 import { useHotkeysStore } from "renderer/stores/hotkeys/store";
+import {
+	useClearPendingWorkspace,
+	useNewWorkspaceModalOpen,
+	useSetPendingWorkspace,
+	useSetPendingWorkspaceStatus,
+} from "renderer/stores/new-workspace-modal";
 import { buildPromptAgentLaunchRequest } from "shared/utils/agent-launch-request";
 import {
 	type AgentDefinitionId,
 	getEnabledAgentConfigs,
 	indexResolvedAgentConfigs,
 } from "shared/utils/agent-settings";
-import {
-	resolveBranchPrefix,
-	sanitizeBranchNameWithMaxLength,
-} from "shared/utils/branch";
+import { sanitizeBranchNameWithMaxLength } from "shared/utils/branch";
 import type { LinkedPR } from "../../NewWorkspaceModalDraftContext";
 import { useNewWorkspaceModalDraft } from "../../NewWorkspaceModalDraftContext";
+import { GitHubIssueLinkCommand } from "./components/GitHubIssueLinkCommand";
+import { LinkedGitHubIssuePill } from "./components/LinkedGitHubIssuePill";
 import { LinkedPRPill } from "./components/LinkedPRPill";
 import { PRLinkCommand } from "./components/PRLinkCommand";
+import type { OpenableWorktreeAction } from "./utils/resolveOpenableWorktrees";
+import { resolveOpenableWorktrees } from "./utils/resolveOpenableWorktrees";
 
 type WorkspaceCreateAgent = AgentDefinitionId | "none";
 
@@ -110,8 +125,12 @@ export function PromptGroup(props: PromptGroupProps) {
 
 const PlusMenu = forwardRef<
 	HTMLDivElement,
-	{ onOpenIssueLink: () => void; onOpenPRLink: () => void }
->(function PlusMenu({ onOpenIssueLink, onOpenPRLink }, ref) {
+	{
+		onOpenIssueLink: () => void;
+		onOpenGitHubIssue: () => void;
+		onOpenPRLink: () => void;
+	}
+>(function PlusMenu({ onOpenIssueLink, onOpenGitHubIssue, onOpenPRLink }, ref) {
 	const attachments = usePromptInputAttachments();
 
 	return (
@@ -122,7 +141,7 @@ const PlusMenu = forwardRef<
 						<PlusIcon className="size-3.5" />
 					</PromptInputButton>
 				</DropdownMenuTrigger>
-				<DropdownMenuContent side="top" align="end" className="w-52">
+				<DropdownMenuContent side="bottom" align="start" className="w-52">
 					<DropdownMenuItem onSelect={() => attachments.openFileDialog()}>
 						<PaperclipIcon className="size-4" />
 						Add attachment
@@ -130,6 +149,10 @@ const PlusMenu = forwardRef<
 					<DropdownMenuItem onSelect={onOpenIssueLink}>
 						<SiLinear className="size-4" />
 						Link issue
+					</DropdownMenuItem>
+					<DropdownMenuItem onSelect={onOpenGitHubIssue}>
+						<GoIssueOpened className="size-4" />
+						Link GitHub issue
 					</DropdownMenuItem>
 					<DropdownMenuItem onSelect={onOpenPRLink}>
 						<LuGitPullRequest className="size-4" />
@@ -246,15 +269,27 @@ function BaseBranchPickerInline({
 	isBranchesError,
 	branches,
 	worktreeBranches,
+	openableWorktrees,
+	activeWorkspacesByBranch,
+	externalWorktreeBranches,
+	modKey,
 	onSelectBaseBranch,
+	onOpenWorktree,
+	onOpenActiveWorkspace,
 }: {
 	effectiveBaseBranch: string | null;
 	defaultBranch?: string;
 	isBranchesLoading: boolean;
 	isBranchesError: boolean;
-	branches: Array<{ name: string; lastCommitDate: number }>;
+	branches: Array<{ name: string; lastCommitDate: number; isLocal: boolean }>;
 	worktreeBranches: Set<string>;
+	openableWorktrees: Map<string, OpenableWorktreeAction>;
+	activeWorkspacesByBranch: Map<string, string>;
+	externalWorktreeBranches: Set<string>;
+	modKey: string;
 	onSelectBaseBranch: (branchName: string) => void;
+	onOpenWorktree: (action: OpenableWorktreeAction) => void;
+	onOpenActiveWorkspace: (workspaceId: string) => void;
 }) {
 	const [open, setOpen] = useState(false);
 	const [branchSearch, setBranchSearch] = useState("");
@@ -309,7 +344,7 @@ function BaseBranchPickerInline({
 				</button>
 			</PopoverTrigger>
 			<PopoverContent
-				className="w-64 p-0"
+				className="w-96 p-0"
 				align="start"
 				onWheel={(event) => event.stopPropagation()}
 			>
@@ -343,39 +378,140 @@ function BaseBranchPickerInline({
 						value={branchSearch}
 						onValueChange={setBranchSearch}
 					/>
-					<CommandList className="max-h-[200px]">
+					<CommandList className="max-h-[400px]">
 						<CommandEmpty>No branches found</CommandEmpty>
-						{displayBranches.map((branch) => (
-							<CommandItem
-								key={branch.name}
-								value={branch.name}
-								onSelect={() => {
-									onSelectBaseBranch(branch.name);
-									setOpen(false);
-								}}
-								className="flex items-center justify-between"
-							>
-								<span className="flex items-center gap-2 truncate">
+						{displayBranches.map((branch) => {
+							const openAction = openableWorktrees.get(branch.name);
+							const activeWorkspaceId = activeWorkspacesByBranch.get(
+								branch.name,
+							);
+							const isExternal = externalWorktreeBranches.has(branch.name);
+							const hasExistingWorkspace = !!(activeWorkspaceId || openAction);
+
+							// Determine icon based on state - all same color
+							let icon: React.ReactNode;
+							if (activeWorkspaceId) {
+								icon = (
+									<GoArrowUpRight className="size-3.5 shrink-0 text-muted-foreground" />
+								);
+							} else if (openAction) {
+								icon = (
+									<ExternalLinkIcon className="size-3.5 shrink-0 text-muted-foreground" />
+								);
+							} else if (branch.isLocal) {
+								icon = (
 									<GoGitBranch className="size-3.5 shrink-0 text-muted-foreground" />
-									<span className="truncate">{branch.name}</span>
-									{branch.name === defaultBranch && (
-										<span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-											default
+								);
+							} else {
+								icon = (
+									<GoGlobe className="size-3.5 shrink-0 text-muted-foreground" />
+								);
+							}
+
+							return (
+								<CommandItem
+									key={branch.name}
+									value={branch.name}
+									onSelect={() => {
+										if (activeWorkspaceId) {
+											onOpenActiveWorkspace(activeWorkspaceId);
+										} else if (openAction) {
+											onOpenWorktree(openAction);
+										} else {
+											onSelectBaseBranch(branch.name);
+										}
+										setOpen(false);
+									}}
+									className="group h-11 flex items-center justify-between gap-3 px-3"
+								>
+									<span className="flex items-center gap-2.5 truncate flex-1 min-w-0">
+										{icon}
+										<span className="truncate font-mono text-xs">
+											{branch.name}
 										</span>
-									)}
-								</span>
-								<span className="flex items-center gap-2 shrink-0">
-									{branch.lastCommitDate > 0 && (
-										<span className="text-xs text-muted-foreground">
-											{formatRelativeTime(branch.lastCommitDate)}
+
+										{/* Inline badges */}
+										<span className="flex items-center gap-1.5 shrink-0">
+											{branch.name === defaultBranch && (
+												<span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+													default
+												</span>
+											)}
+											{isExternal && !activeWorkspaceId && (
+												<span className="text-[10px] text-muted-foreground/60 bg-muted/60 px-1.5 py-0.5 rounded">
+													external
+												</span>
+											)}
 										</span>
-									)}
-									{effectiveBaseBranch === branch.name && (
-										<HiCheck className="size-4 text-primary" />
-									)}
-								</span>
-							</CommandItem>
-						))}
+									</span>
+
+									{/* Right side: time + buttons */}
+									<span className="flex items-center gap-2 shrink-0">
+										{branch.lastCommitDate > 0 && (
+											<span className="text-[11px] text-muted-foreground/70 group-data-[selected=true]:hidden">
+												{formatRelativeTime(branch.lastCommitDate)}
+											</span>
+										)}
+
+										{/* Show checkmark for selected base branch when not hovering */}
+										{!hasExistingWorkspace &&
+											effectiveBaseBranch === branch.name && (
+												<HiCheck className="size-4 text-primary group-data-[selected=true]:hidden" />
+											)}
+
+										{/* Action buttons - show on hover/select */}
+										<span className="hidden group-data-[selected=true]:flex items-center gap-1.5">
+											{hasExistingWorkspace && (
+												<Button
+													size="sm"
+													variant="ghost"
+													className="h-7 px-2.5 text-xs font-medium hover:bg-accent/10 hover:text-accent-foreground"
+													onClick={(e) => {
+														e.stopPropagation();
+														if (activeWorkspaceId) {
+															onOpenActiveWorkspace(activeWorkspaceId);
+														} else if (openAction) {
+															onOpenWorktree(openAction);
+														}
+														setOpen(false);
+													}}
+												>
+													<GoArrowUpRight className="size-3.5 mr-1" />
+													Open
+													<span className="ml-1 text-[10px] opacity-60">↵</span>
+												</Button>
+											)}
+											<Button
+												size="sm"
+												className="h-7 px-2.5 text-xs font-medium"
+												onClick={(e) => {
+													e.stopPropagation();
+													onSelectBaseBranch(branch.name);
+													setOpen(false);
+												}}
+											>
+												{hasExistingWorkspace ? (
+													<>
+														<PlusIcon className="size-3.5 mr-1" />
+														Create
+														<span className="ml-1 text-[10px] opacity-70">
+															{modKey}↵
+														</span>
+													</>
+												) : (
+													<>
+														Create
+														<span className="ml-1 text-[10px] opacity-70">
+															↵
+														</span>
+													</>
+												)}
+											</Button>
+										</span>
+									</span>
+								</CommandItem>
+							);
+						})}
 					</CommandList>
 				</Command>
 			</PopoverContent>
@@ -391,17 +527,26 @@ function PromptGroupInner({
 	onImportRepo,
 	onNewProject,
 }: PromptGroupProps) {
+	const navigate = useNavigate();
 	const platform = useHotkeysStore((state) => state.platform);
 	const modKey = platform === "darwin" ? "⌘" : "Ctrl";
+	const isNewWorkspaceModalOpen = useNewWorkspaceModalOpen();
+	const utils = electronTrpc.useUtils();
 	const {
+		closeAndResetDraft,
 		closeModal,
 		createWorkspace,
 		createFromPr,
+		openTrackedWorktree,
+		openExternalWorktree,
 		draft,
 		runAsyncAction,
 		updateDraft,
 	} = useNewWorkspaceModalDraft();
 	const attachments = useProviderAttachments();
+	const clearPendingWorkspace = useClearPendingWorkspace();
+	const setPendingWorkspace = useSetPendingWorkspace();
+	const setPendingWorkspaceStatus = useSetPendingWorkspaceStatus();
 	const {
 		baseBranch,
 		prompt,
@@ -413,8 +558,6 @@ function PromptGroupInner({
 		linkedIssues,
 		linkedPR,
 	} = draft;
-	const runSetupScriptRef = useRef(runSetupScript);
-	runSetupScriptRef.current = runSetupScript;
 	const agentPresetsQuery = electronTrpc.settings.getAgentPresets.useQuery();
 	const agentPresets = agentPresetsQuery.data ?? [];
 	const enabledAgentPresets = useMemo(
@@ -438,10 +581,21 @@ function PromptGroupInner({
 			agentsReady: agentPresetsQuery.isFetched,
 		});
 	const [issueLinkOpen, setIssueLinkOpen] = useState(false);
+	const [gitHubIssueLinkOpen, setGitHubIssueLinkOpen] = useState(false);
 	const [prLinkOpen, setPRLinkOpen] = useState(false);
 	const plusMenuRef = useRef<HTMLDivElement>(null);
+	const submitStartedRef = useRef(false);
 	const trimmedPrompt = prompt.trim();
 	const firstIssueSlug = linkedIssues[0]?.slug ?? null;
+
+	// AI branch name generation (on submit only)
+	const generateBranchNameMutation =
+		electronTrpc.workspaces.generateBranchName.useMutation();
+	useEffect(() => {
+		if (isNewWorkspaceModalOpen) {
+			submitStartedRef.current = false;
+		}
+	}, [isNewWorkspaceModalOpen]);
 
 	const { data: project } = electronTrpc.projects.get.useQuery(
 		{ id: projectId ?? "" },
@@ -464,28 +618,6 @@ function PromptGroupInner({
 	// Only show loading while waiting for the fast local query
 	const isBranchesLoading = isLocalBranchesLoading && !branchData;
 
-	const { data: gitAuthor } = electronTrpc.projects.getGitAuthor.useQuery(
-		{ id: projectId ?? "" },
-		{ enabled: !!projectId },
-	);
-	const { data: globalBranchPrefix } =
-		electronTrpc.settings.getBranchPrefix.useQuery();
-	const { data: gitInfo } = electronTrpc.settings.getGitInfo.useQuery();
-
-	const resolvedPrefix = useMemo(() => {
-		const projectOverrides = project?.branchPrefixMode != null;
-		return resolveBranchPrefix({
-			mode: projectOverrides
-				? project?.branchPrefixMode
-				: (globalBranchPrefix?.mode ?? "none"),
-			customPrefix: projectOverrides
-				? project?.branchPrefixCustom
-				: globalBranchPrefix?.customPrefix,
-			authorPrefix: gitAuthor?.prefix,
-			githubUsername: gitInfo?.githubUsername,
-		});
-	}, [project, globalBranchPrefix, gitAuthor, gitInfo]);
-
 	const { data: externalWorktrees = [] } =
 		electronTrpc.workspaces.getExternalWorktrees.useQuery(
 			{ projectId: projectId ?? "" },
@@ -505,25 +637,41 @@ function PromptGroupInner({
 		return set;
 	}, [externalWorktrees, trackedWorktrees]);
 
+	// Fetch active workspaces for this project
+	const { data: activeWorkspaces = [] } =
+		electronTrpc.workspaces.getAll.useQuery();
+
+	const activeWorkspacesByBranch = useMemo(() => {
+		const map = new Map<string, string>(); // branch → workspaceId
+		for (const ws of activeWorkspaces) {
+			if (ws.projectId === projectId && !ws.deletingAt) {
+				map.set(ws.branch, ws.id);
+			}
+		}
+		return map;
+	}, [activeWorkspaces, projectId]);
+
+	// Resolve openable worktrees (no active workspace)
+	const openableWorktrees = useMemo(
+		() => resolveOpenableWorktrees(trackedWorktrees, externalWorktrees),
+		[trackedWorktrees, externalWorktrees],
+	);
+
+	// Map external worktree paths for badge display
+	const externalWorktreeBranches = useMemo(() => {
+		const set = new Set<string>();
+		for (const wt of externalWorktrees) {
+			set.add(wt.branch);
+		}
+		return set;
+	}, [externalWorktrees]);
+
 	const effectiveBaseBranch = resolveEffectiveWorkspaceBaseBranch({
 		explicitBaseBranch: baseBranch,
 		workspaceBaseBranch: project?.workspaceBaseBranch,
 		defaultBranch: branchData?.defaultBranch,
 		branches: branchData?.branches,
 	});
-
-	const branchSlug = sanitizeBranchNameWithMaxLength(
-		trimmedPrompt ||
-			firstIssueSlug ||
-			(linkedPR ? `pr-${linkedPR.prNumber}` : "") ||
-			"",
-		18,
-	);
-
-	const branchPreview =
-		branchSlug && !branchNameEdited && resolvedPrefix
-			? sanitizeBranchNameWithMaxLength(`${resolvedPrefix}/${branchSlug}`)
-			: branchSlug;
 
 	const previousProjectIdRef = useRef(projectId);
 
@@ -575,96 +723,318 @@ function PromptGroupInner({
 			return;
 		}
 
-		let convertedFiles: ConvertedFile[] | undefined;
-		if (attachments.files.length > 0) {
+		if (submitStartedRef.current) {
+			return;
+		}
+		submitStartedRef.current = true;
+
+		const displayName =
+			workspaceNameEdited && workspaceName.trim()
+				? workspaceName.trim()
+				: trimmedPrompt || "New workspace";
+		const willGenerateAIName =
+			!branchNameEdited && !!trimmedPrompt && !linkedPR;
+		const pendingWorkspaceId = crypto.randomUUID();
+		const detachedFiles = attachments.takeFiles();
+
+		setPendingWorkspace({
+			id: pendingWorkspaceId,
+			projectId,
+			name: displayName,
+			status: willGenerateAIName ? "generating-branch" : "preparing",
+		});
+		closeAndResetDraft();
+
+		try {
+			let aiBranchName: string | null = null;
+			if (willGenerateAIName) {
+				let timeoutId: NodeJS.Timeout | null = null;
+				try {
+					const AI_GENERATION_TIMEOUT_MS = 30000;
+					const timeoutPromise = new Promise<never>((_, reject) => {
+						timeoutId = setTimeout(
+							() => reject(new Error("AI generation timeout")),
+							AI_GENERATION_TIMEOUT_MS,
+						);
+					});
+
+					const result = await Promise.race([
+						generateBranchNameMutation.mutateAsync({
+							prompt: trimmedPrompt,
+							projectId,
+						}),
+						timeoutPromise,
+					]);
+
+					if (timeoutId) clearTimeout(timeoutId);
+					aiBranchName = result.branchName;
+				} catch (error) {
+					if (timeoutId) clearTimeout(timeoutId);
+
+					const errorMessage =
+						error instanceof Error ? error.message : String(error);
+					if (errorMessage.includes("timeout")) {
+						console.warn("[PromptGroup] AI generation timeout");
+						toast.info("Using random branch name (AI generation timed out)");
+					} else if (
+						errorMessage.toLowerCase().includes("auth") ||
+						errorMessage.includes("401") ||
+						errorMessage.includes("403")
+					) {
+						console.error("[PromptGroup] AI auth error:", error);
+						toast.error(
+							"AI authentication failed. Please check your AI settings.",
+						);
+						clearPendingWorkspace(pendingWorkspaceId);
+						return;
+					} else {
+						console.warn("[PromptGroup] AI generation failed:", error);
+						toast.info("Using random branch name (AI generation unavailable)");
+					}
+				} finally {
+					setPendingWorkspaceStatus(pendingWorkspaceId, "preparing");
+				}
+			}
+
+			let convertedFiles: ConvertedFile[] = [];
+			if (detachedFiles.length > 0) {
+				try {
+					convertedFiles = await Promise.all(
+						detachedFiles.map(async (file) => ({
+							data: await convertBlobUrlToDataUrl(file.url),
+							mediaType: file.mediaType,
+							filename: file.filename,
+						})),
+					);
+				} catch (err) {
+					clearPendingWorkspace(pendingWorkspaceId);
+					toast.error(
+						err instanceof Error
+							? err.message
+							: "Failed to process attachments",
+					);
+					return;
+				}
+			}
+
+			// Fetch and attach GitHub issue content
+			const githubIssues = linkedIssues.filter(
+				(issue): issue is typeof issue & { number: number } =>
+					issue.source === "github" && typeof issue.number === "number",
+			);
+			if (githubIssues.length > 0 && projectId) {
+				try {
+					// Helper to add timeout to promises
+					const fetchWithTimeout = <T,>(
+						promise: Promise<T>,
+						timeoutMs: number,
+					): Promise<T> => {
+						return Promise.race([
+							promise,
+							new Promise<T>((_, reject) =>
+								setTimeout(
+									() => reject(new Error("Request timeout")),
+									timeoutMs,
+								),
+							),
+						]);
+					};
+
+					const issueContents = await Promise.all(
+						githubIssues.map(async (issue) => {
+							try {
+								const content = await fetchWithTimeout(
+									utils.client.projects.getIssueContent.query({
+										projectId,
+										issueNumber: issue.number,
+									}),
+									10000, // 10 second timeout per issue
+								);
+
+								// Sanitize user-generated content to prevent injection
+								const sanitizeText = (str: string) =>
+									str.replace(/[&<>"']/g, (char) => {
+										const entities: Record<string, string> = {
+											"&": "&amp;",
+											"<": "&lt;",
+											">": "&gt;",
+											'"': "&quot;",
+											"'": "&#39;",
+										};
+										return entities[char] || char;
+									});
+
+								const sanitizeUrl = (url: string) => {
+									try {
+										const parsed = new URL(url);
+										// Only allow http/https protocols
+										if (!["http:", "https:"].includes(parsed.protocol)) {
+											return "#invalid-url";
+										}
+										return url;
+									} catch {
+										return "#invalid-url";
+									}
+								};
+
+								// Limit body size to prevent memory issues
+								const MAX_BODY_LENGTH = 50000; // 50KB
+								const truncatedBody =
+									content.body.length > MAX_BODY_LENGTH
+										? `${content.body.slice(0, MAX_BODY_LENGTH)}\n\n[... content truncated due to length ...]`
+										: content.body;
+
+								const markdown = `# GitHub Issue #${content.number}: ${sanitizeText(content.title)}
+
+**URL:** ${sanitizeUrl(content.url)}
+**State:** ${content.state}
+**Author:** ${sanitizeText(content.author || "Unknown")}
+**Created:** ${content.createdAt ? new Date(content.createdAt).toLocaleString() : "Unknown"}
+**Updated:** ${content.updatedAt ? new Date(content.updatedAt).toLocaleString() : "Unknown"}
+
+---
+
+${sanitizeText(truncatedBody)}`;
+
+								// Convert markdown to base64 data URL
+								const base64 = btoa(
+									encodeURIComponent(markdown).replace(
+										/%([0-9A-F]{2})/g,
+										(_, p1) => String.fromCharCode(Number.parseInt(p1, 16)),
+									),
+								);
+
+								return {
+									data: `data:text/markdown;base64,${base64}`,
+									mediaType: "text/markdown",
+									filename: `github-issue-${content.number}.md`,
+								};
+							} catch (err) {
+								console.warn(
+									`Failed to fetch GitHub issue #${issue.number}:`,
+									err,
+								);
+								return null;
+							}
+						}),
+					);
+
+					// Add successfully fetched issues to convertedFiles
+					const validIssueFiles = issueContents.filter(
+						(file) => file !== null,
+					) as ConvertedFile[];
+					convertedFiles = [...convertedFiles, ...validIssueFiles];
+				} catch (err) {
+					console.warn("Failed to fetch GitHub issue contents:", err);
+					// Don't block workspace creation if issue fetching fails
+				}
+			}
+
+			let launchRequest: AgentLaunchRequest | null = null;
 			try {
-				convertedFiles = await Promise.all(
-					attachments.files.map(async (file) => ({
-						data: await convertBlobUrlToDataUrl(file.url),
-						mediaType: file.mediaType,
-						filename: file.filename,
-					})),
+				launchRequest = buildLaunchRequest(
+					trimmedPrompt,
+					convertedFiles.length > 0 ? convertedFiles : undefined,
 				);
-			} catch (err) {
+			} catch (error) {
+				clearPendingWorkspace(pendingWorkspaceId);
 				toast.error(
-					err instanceof Error ? err.message : "Failed to process attachments",
+					error instanceof Error
+						? error.message
+						: "Failed to prepare agent launch",
 				);
 				return;
 			}
-		}
 
-		let launchRequest: AgentLaunchRequest | null = null;
-		try {
-			launchRequest = buildLaunchRequest(trimmedPrompt, convertedFiles);
-		} catch (error) {
-			toast.error(
-				error instanceof Error
-					? error.message
-					: "Failed to prepare agent launch",
-			);
-			return;
-		}
+			setPendingWorkspaceStatus(pendingWorkspaceId, "creating");
 
-		if (linkedPR) {
+			if (linkedPR) {
+				void runAsyncAction(
+					createFromPr.mutateAsyncWithSetup(
+						{ projectId, prUrl: linkedPR.url },
+						launchRequest ?? undefined,
+					),
+					{
+						loading: `Creating workspace from PR #${linkedPR.prNumber}...`,
+						success: "Workspace created from PR",
+						error: (err) =>
+							err instanceof Error
+								? err.message
+								: "Failed to create workspace from PR",
+					},
+					{ closeAndReset: false },
+				).finally(() => {
+					clearPendingWorkspace(pendingWorkspaceId);
+				});
+				return;
+			}
+
 			void runAsyncAction(
-				createFromPr.mutateAsyncWithSetup(
-					{ projectId, prUrl: linkedPR.url },
-					launchRequest ?? undefined,
+				createWorkspace.mutateAsyncWithPendingSetup(
+					{
+						projectId,
+						name:
+							workspaceNameEdited && workspaceName.trim()
+								? workspaceName.trim()
+								: undefined,
+						prompt: trimmedPrompt || undefined,
+						branchName:
+							(branchNameEdited && branchName.trim()
+								? sanitizeBranchNameWithMaxLength(
+										branchName.trim(),
+										undefined,
+										{
+											preserveCase: true,
+										},
+									)
+								: aiBranchName) || undefined,
+						baseBranch: baseBranch || undefined,
+					},
+					{
+						agentLaunchRequest: launchRequest ?? undefined,
+						resolveInitialCommands: runSetupScript
+							? (commands) => commands
+							: () => null,
+					},
 				),
 				{
-					loading: `Creating workspace from PR #${linkedPR.prNumber}...`,
-					success: "Workspace created from PR",
+					loading: "Creating workspace...",
+					success: "Workspace created",
 					error: (err) =>
-						err instanceof Error
-							? err.message
-							: "Failed to create workspace from PR",
+						err instanceof Error ? err.message : "Failed to create workspace",
 				},
-			);
-			return;
+				{ closeAndReset: false },
+			).finally(() => {
+				clearPendingWorkspace(pendingWorkspaceId);
+			});
+		} finally {
+			for (const file of detachedFiles) {
+				if (file.url?.startsWith("blob:")) {
+					URL.revokeObjectURL(file.url);
+				}
+			}
 		}
-
-		void runAsyncAction(
-			createWorkspace.mutateAsyncWithPendingSetup(
-				{
-					projectId,
-					name:
-						workspaceNameEdited && workspaceName.trim()
-							? workspaceName.trim()
-							: undefined,
-					prompt: trimmedPrompt || undefined,
-					branchName:
-						(branchNameEdited && branchName.trim()
-							? sanitizeBranchNameWithMaxLength(branchName.trim())
-							: branchSlug) || undefined,
-					baseBranch: baseBranch || undefined,
-				},
-				{
-					agentLaunchRequest: launchRequest ?? undefined,
-					resolveInitialCommands: (commands) =>
-						runSetupScriptRef.current ? commands : null,
-				},
-			),
-			{
-				loading: "Creating workspace...",
-				success: "Workspace created",
-				error: (err) =>
-					err instanceof Error ? err.message : "Failed to create workspace",
-			},
-		);
 	}, [
-		attachments.files,
+		attachments,
 		baseBranch,
 		branchName,
 		branchNameEdited,
-		branchSlug,
 		buildLaunchRequest,
+		closeAndResetDraft,
+		clearPendingWorkspace,
 		convertBlobUrlToDataUrl,
 		createFromPr,
 		createWorkspace,
+		generateBranchNameMutation,
+		linkedIssues,
 		linkedPR,
 		projectId,
 		runAsyncAction,
+		runSetupScript,
+		setPendingWorkspace,
+		setPendingWorkspaceStatus,
 		trimmedPrompt,
+		utils,
 		workspaceName,
 		workspaceNameEdited,
 	]);
@@ -677,9 +1047,90 @@ function PromptGroupInner({
 		updateDraft({ baseBranch: selectedBaseBranch });
 	};
 
-	const addLinkedIssue = (slug: string, title: string) => {
+	const handleOpenWorktree = useCallback(
+		(action: OpenableWorktreeAction) => {
+			if (!projectId) return;
+
+			if (action.type === "tracked") {
+				void runAsyncAction(
+					openTrackedWorktree.mutateAsync({
+						worktreeId: action.worktreeId,
+					}),
+					{
+						loading: "Opening worktree...",
+						success: "Worktree opened",
+						error: (err) =>
+							err instanceof Error ? err.message : "Failed to open worktree",
+					},
+				);
+			} else {
+				void runAsyncAction(
+					openExternalWorktree.mutateAsync({
+						projectId,
+						worktreePath: action.worktreePath,
+						branch: action.branch,
+					}),
+					{
+						loading: "Opening worktree...",
+						success: "Worktree opened",
+						error: (err) =>
+							err instanceof Error ? err.message : "Failed to open worktree",
+					},
+				);
+			}
+		},
+		[
+			projectId,
+			runAsyncAction,
+			openExternalWorktree.mutateAsync,
+			openTrackedWorktree.mutateAsync,
+		],
+	);
+
+	const handleOpenActiveWorkspace = useCallback(
+		(workspaceId: string) => {
+			closeModal();
+			void navigateToWorkspace(workspaceId, navigate);
+		},
+		[closeModal, navigate],
+	);
+
+	const addLinkedIssue = (
+		slug: string,
+		title: string,
+		taskId: string | undefined,
+		url?: string,
+	) => {
 		if (linkedIssues.some((issue) => issue.slug === slug)) return;
-		updateDraft({ linkedIssues: [...linkedIssues, { slug, title }] });
+		updateDraft({
+			linkedIssues: [
+				...linkedIssues,
+				{ slug, title, source: "internal", taskId, url },
+			],
+		});
+	};
+
+	const addLinkedGitHubIssue = (
+		issueNumber: number,
+		title: string,
+		url: string,
+		state: string,
+	) => {
+		// Normalize state to valid type
+		const normalizedState: "open" | "closed" =
+			state.toLowerCase() === "closed" ? "closed" : "open";
+
+		const issue = {
+			slug: `#${issueNumber}`,
+			title,
+			source: "github" as const,
+			url,
+			number: issueNumber,
+			state: normalizedState,
+		};
+		// Check for duplicates by URL to handle same issue numbers from different repos
+		if (linkedIssues.some((i) => i.url === url)) return;
+		updateDraft({ linkedIssues: [...linkedIssues, issue] });
 	};
 
 	const removeLinkedIssue = (slug: string) => {
@@ -717,9 +1168,11 @@ function PromptGroupInner({
 				/>
 				<div className="shrink min-w-0 ml-auto max-w-[50%]">
 					<Input
-						className="border-none bg-transparent text-xs font-mono text-muted-foreground/60 px-0 h-auto focus-visible:ring-0 placeholder:text-muted-foreground/30 focus:text-muted-foreground text-right placeholder:text-right overflow-hidden text-ellipsis"
-						placeholder="branch-name"
-						value={branchNameEdited ? branchName : branchPreview || ""}
+						className={cn(
+							"border-none bg-transparent text-xs font-mono text-muted-foreground/60 px-0 h-auto focus-visible:ring-0 placeholder:text-muted-foreground/30 focus:text-muted-foreground text-right placeholder:text-right overflow-hidden text-ellipsis",
+						)}
+						placeholder="branch name"
+						value={branchName}
 						onChange={(e) =>
 							updateDraft({
 								branchName: e.target.value.replace(/\s+/g, "-"),
@@ -729,6 +1182,8 @@ function PromptGroupInner({
 						onBlur={() => {
 							const sanitized = sanitizeBranchNameWithMaxLength(
 								branchName.trim(),
+								undefined,
+								{ preserveCase: true },
 							);
 							if (!sanitized) {
 								updateDraft({ branchName: "", branchNameEdited: false });
@@ -776,11 +1231,22 @@ function PromptGroupInner({
 									exit={{ opacity: 0, scale: 0.8 }}
 									transition={{ duration: 0.15 }}
 								>
-									<LinkedIssuePill
-										slug={issue.slug}
-										title={issue.title}
-										onRemove={() => removeLinkedIssue(issue.slug)}
-									/>
+									{issue.source === "github" ? (
+										<LinkedGitHubIssuePill
+											issueNumber={issue.number ?? 0}
+											title={issue.title}
+											state={issue.state ?? "open"}
+											onRemove={() => removeLinkedIssue(issue.slug)}
+										/>
+									) : (
+										<LinkedIssuePill
+											slug={issue.slug}
+											title={issue.title}
+											url={issue.url}
+											taskId={issue.taskId}
+											onRemove={() => removeLinkedIssue(issue.slug)}
+										/>
+									)}
 								</motion.div>
 							))}
 						</AnimatePresence>
@@ -823,6 +1289,9 @@ function PromptGroupInner({
 							onOpenIssueLink={() =>
 								requestAnimationFrame(() => setIssueLinkOpen(true))
 							}
+							onOpenGitHubIssue={() =>
+								requestAnimationFrame(() => setGitHubIssueLinkOpen(true))
+							}
 							onOpenPRLink={() =>
 								requestAnimationFrame(() => setPRLinkOpen(true))
 							}
@@ -834,6 +1303,20 @@ function PromptGroupInner({
 							onOpenChange={setIssueLinkOpen}
 							onSelect={addLinkedIssue}
 						/>
+						<GitHubIssueLinkCommand
+							open={gitHubIssueLinkOpen}
+							onOpenChange={setGitHubIssueLinkOpen}
+							onSelect={(issue) =>
+								addLinkedGitHubIssue(
+									issue.issueNumber,
+									issue.title,
+									issue.url,
+									issue.state,
+								)
+							}
+							projectId={projectId}
+							anchorRef={plusMenuRef}
+						/>
 						<PRLinkCommand
 							open={prLinkOpen}
 							onOpenChange={setPRLinkOpen}
@@ -843,17 +1326,12 @@ function PromptGroupInner({
 						/>
 						<PromptInputSubmit
 							className="size-[22px] rounded-full border border-transparent bg-foreground/10 shadow-none p-[5px] hover:bg-foreground/20"
-							disabled={createWorkspace.isPending || createFromPr.isPending}
 							onClick={(e) => {
 								e.preventDefault();
 								void handleCreate();
 							}}
 						>
-							{createWorkspace.isPending || createFromPr.isPending ? (
-								<Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />
-							) : (
-								<ArrowUpIcon className="size-3.5 text-muted-foreground" />
-							)}
+							<ArrowUpIcon className="size-3.5 text-muted-foreground" />
 						</PromptInputSubmit>
 					</div>
 				</PromptInputFooter>
@@ -897,7 +1375,13 @@ function PromptGroupInner({
 									isBranchesError={isBranchesError}
 									branches={branchData?.branches ?? []}
 									worktreeBranches={worktreeBranches}
+									openableWorktrees={openableWorktrees}
+									activeWorkspacesByBranch={activeWorkspacesByBranch}
+									externalWorktreeBranches={externalWorktreeBranches}
+									modKey={modKey}
 									onSelectBaseBranch={handleBaseBranchSelect}
+									onOpenWorktree={handleOpenWorktree}
+									onOpenActiveWorkspace={handleOpenActiveWorkspace}
 								/>
 							</motion.div>
 						)}

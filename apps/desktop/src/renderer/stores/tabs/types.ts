@@ -63,6 +63,7 @@ export interface AddTabWithMultiplePanesOptions {
 }
 
 export type MosaicDropPosition = "top" | "bottom" | "left" | "right";
+export type FileViewerReuseScope = "none" | "active-tab" | "workspace";
 
 /**
  * Options for opening a file in a file-viewer pane
@@ -87,6 +88,8 @@ export interface AddFileViewerPaneOptions {
 	isPinned?: boolean;
 	/** If true, opens in a new tab instead of splitting the current tab */
 	openInNewTab?: boolean;
+	/** Controls whether file-viewer opens may reuse existing panes instead of always opening a fresh pane/tab */
+	reuseExisting?: FileViewerReuseScope;
 }
 
 /**
@@ -134,6 +137,14 @@ export interface TabsStore extends TabsState {
 	markPaneAsUsed: (paneId: string) => void;
 	setPaneStatus: (paneId: string, status: PaneStatus) => void;
 	setPaneName: (paneId: string, name: string) => void;
+	setPaneWorkspaceRun: (
+		paneId: string,
+		workspaceRun: {
+			workspaceId: string;
+			state: "running" | "stopped-by-user" | "stopped-by-exit";
+			command?: string;
+		} | null,
+	) => void;
 	setPaneAutoTitle: (paneId: string, title: string) => void;
 	clearWorkspaceAttentionStatus: (workspaceId: string) => void;
 	resetWorkspaceStatus: (workspaceId: string) => void;
