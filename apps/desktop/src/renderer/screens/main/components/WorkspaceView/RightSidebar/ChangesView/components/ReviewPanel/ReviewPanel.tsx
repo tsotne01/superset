@@ -191,7 +191,7 @@ export function ReviewPanel({
 			const isCopied = copiedActionKey === commentCopyActionKey;
 			const content = (
 				<>
-					<Avatar className="mt-0.5 size-5 shrink-0">
+					<Avatar className="mt-0.5 size-4 shrink-0">
 						{comment.avatarUrl ? (
 							<AvatarImage src={comment.avatarUrl} alt={comment.authorLogin} />
 						) : null}
@@ -223,7 +223,7 @@ export function ReviewPanel({
 			return (
 				<div
 					key={comment.id}
-					className="group flex items-start gap-1 rounded-sm px-1.5 py-1.5 transition-colors hover:bg-accent/30"
+					className="group flex items-start gap-1 rounded-sm px-1.5 py-1 transition-colors hover:bg-accent/50"
 				>
 					{comment.url ? (
 						<a
@@ -245,7 +245,7 @@ export function ReviewPanel({
 								href={comment.url}
 								target="_blank"
 								rel="noopener noreferrer"
-								className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+								className="inline-flex size-4 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 								aria-label="Open comment on GitHub"
 							>
 								<LuArrowUpRight className="size-3" />
@@ -253,7 +253,7 @@ export function ReviewPanel({
 						) : null}
 						<button
 							type="button"
-							className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+							className="inline-flex size-4 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 							onClick={(event) => {
 								event.preventDefault();
 								event.stopPropagation();
@@ -355,8 +355,8 @@ export function ReviewPanel({
 			<Collapsible open={checksOpen} onOpenChange={setChecksOpen}>
 				<CollapsibleTrigger
 					className={cn(
-						"group flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left min-w-0",
-						"hover:bg-accent/30 cursor-pointer transition-colors",
+						"group flex w-full min-w-0 items-center justify-between gap-2 px-2 py-1 text-left",
+						"hover:bg-accent/50 cursor-pointer transition-colors",
 					)}
 				>
 					<div className="flex min-w-0 items-center gap-1.5">
@@ -388,9 +388,9 @@ export function ReviewPanel({
 						</span>
 					</div>
 				</CollapsibleTrigger>
-				<CollapsibleContent className="px-0.5 pb-1 min-w-0 overflow-hidden">
+				<CollapsibleContent className="min-w-0 px-0.5 pb-1 overflow-hidden">
 					{relevantChecks.length === 0 ? (
-						<div className="px-1.5 py-1.5 text-xs text-muted-foreground">
+						<div className="px-1.5 py-1 text-xs text-muted-foreground">
 							No active checks reported for this pull request yet.
 						</div>
 					) : (
@@ -407,10 +407,10 @@ export function ReviewPanel({
 									rel="noopener noreferrer"
 									className="group block"
 								>
-									<div className="flex min-w-0 items-center gap-1.5 rounded-sm px-1.5 py-1.5 text-xs transition-colors hover:bg-accent/30">
+									<div className="flex min-w-0 items-center gap-1 rounded-sm px-1.5 py-1 text-xs transition-colors hover:bg-accent/50">
 										<CheckIcon
 											className={cn(
-												"size-3.5 shrink-0",
+												"size-3 shrink-0",
 												className,
 												check.status === "pending" && "animate-spin",
 											)}
@@ -429,11 +429,11 @@ export function ReviewPanel({
 							) : (
 								<div
 									key={check.name}
-									className="flex min-w-0 items-center gap-1.5 rounded-sm px-1.5 py-1.5 text-xs"
+									className="flex min-w-0 items-center gap-1 rounded-sm px-1.5 py-1 text-xs"
 								>
 									<CheckIcon
 										className={cn(
-											"size-3.5 shrink-0",
+											"size-3 shrink-0",
 											className,
 											check.status === "pending" && "animate-spin",
 										)}
@@ -454,13 +454,13 @@ export function ReviewPanel({
 			<Collapsible
 				open={commentsOpen}
 				onOpenChange={setCommentsOpen}
-				className="flex min-h-0 flex-1 flex-col"
+				className="min-w-0"
 			>
 				<div className="group flex min-w-0 items-center">
 					<CollapsibleTrigger
 						className={cn(
-							"flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left",
-							"hover:bg-accent/30 cursor-pointer transition-colors",
+							"flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1 text-left",
+							"hover:bg-accent/50 cursor-pointer transition-colors",
 						)}
 					>
 						<VscChevronRight
@@ -475,8 +475,8 @@ export function ReviewPanel({
 						</span>
 					</CollapsibleTrigger>
 				</div>
-				<CollapsibleContent className="min-h-0 flex-1 overflow-hidden">
-					<div className="h-full overflow-y-auto px-0.5 py-1">
+				<CollapsibleContent className="min-w-0 overflow-hidden">
+					<div className="px-0.5 py-1">
 						{isCommentsLoading ? (
 							<div className="space-y-1 px-1">
 								<Skeleton className="h-11 w-full rounded-sm" />

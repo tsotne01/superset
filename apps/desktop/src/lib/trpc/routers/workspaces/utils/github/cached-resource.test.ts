@@ -8,9 +8,11 @@ describe("createCachedResource", () => {
 			maxEntries: 10,
 		});
 		const originalDateNow = Date.now;
-		let resolveRefresh: ((value: number) => void) | null = null;
+		const refreshControl: { resolve: (value: number) => void } = {
+			resolve: () => {},
+		};
 		const refreshPromise = new Promise<number>((resolve) => {
-			resolveRefresh = resolve;
+			refreshControl.resolve = resolve;
 		});
 
 		Date.now = () => 1000;
@@ -20,7 +22,7 @@ describe("createCachedResource", () => {
 		try {
 			expect(await resource.read("status", () => refreshPromise)).toBe(1);
 
-			resolveRefresh?.(2);
+			refreshControl.resolve(2);
 			await refreshPromise;
 
 			expect(resource.get("status")).toBe(2);
@@ -57,9 +59,11 @@ describe("createCachedResource", () => {
 			ttlMs: 10,
 			maxEntries: 10,
 		});
-		let resolveOlder: ((value: number) => void) | null = null;
+		const olderControl: { resolve: (value: number) => void } = {
+			resolve: () => {},
+		};
 		const olderPromise = new Promise<number>((resolve) => {
-			resolveOlder = resolve;
+			olderControl.resolve = resolve;
 		});
 
 		const olderReadPromise = resource.read("status", () => olderPromise, {
@@ -71,7 +75,7 @@ describe("createCachedResource", () => {
 			await resource.read("status", async () => 2, { forceFresh: true }),
 		).toBe(2);
 
-		resolveOlder?.(1);
+		olderControl.resolve(1);
 		expect(await olderReadPromise).toBe(1);
 		expect(resource.get("status")).toBe(2);
 	});

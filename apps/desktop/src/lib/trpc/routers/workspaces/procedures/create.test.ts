@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { execSync } from "node:child_process";
 import {
 	existsSync,
@@ -11,7 +11,232 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { projects, workspaces, worktrees } from "@superset/local-db";
 import { eq } from "drizzle-orm";
-import { localDb } from "main/lib/local-db";
+
+type TableName =
+	| "projects"
+	| "settings"
+	| "workspaceSections"
+	| "workspaces"
+	| "worktrees";
+
+const dbState: Record<TableName, Array<Record<string, unknown>>> = {
+	projects: [],
+	settings: [],
+	workspaceSections: [],
+	workspaces: [],
+	worktrees: [],
+};
+
+let nextMockId = 0;
+
+function resetMockDb(): void {
+	for (const table of Object.values(dbState)) {
+		table.length = 0;
+	}
+	nextMockId = 0;
+}
+
+function nextId(prefix: string): string {
+	nextMockId += 1;
+	return `${prefix}-${nextMockId}`;
+}
+
+function getTableName(table: unknown): TableName {
+	const tableId =
+		typeof table === "object" && table !== null && "id" in table
+			? String((table as { id: unknown }).id)
+			: "";
+
+	if (tableId.startsWith("projects")) {
+		return "projects";
+	}
+	if (tableId.startsWith("settings")) {
+		return "settings";
+	}
+	if (tableId.startsWith("workspace_sections")) {
+		return "workspaceSections";
+	}
+	if (tableId.startsWith("workspaces")) {
+		return "workspaces";
+	}
+	if (tableId.startsWith("worktrees")) {
+		return "worktrees";
+	}
+
+	throw new Error(`Unsupported table mock: ${tableId || String(table)}`);
+}
+
+function withDefaults(
+	tableName: TableName,
+	record: Record<string, unknown>,
+): Record<string, unknown> {
+	switch (tableName) {
+		case "projects":
+			return {
+				id: nextId("project"),
+				tabOrder: null,
+				lastOpenedAt: null,
+				workspaceBaseBranch: null,
+				...record,
+			};
+		case "workspaces":
+			return {
+				id: nextId("workspace"),
+				deletingAt: null,
+				lastOpenedAt: Date.now(),
+				...record,
+			};
+		case "worktrees":
+			return {
+				id: nextId("worktree"),
+				gitStatus: null,
+				createdBySuperset: true,
+				...record,
+			};
+		case "settings":
+			return {
+				id: 1,
+				...record,
+			};
+		case "workspaceSections":
+			return {
+				id: nextId("workspace-section"),
+				...record,
+			};
+	}
+}
+
+const localDb = {
+	select() {
+		let tableName: TableName | null = null;
+		const query = {
+			from(table: unknown) {
+				tableName = getTableName(table);
+				return query;
+			},
+			where(_condition?: unknown) {
+				return query;
+			},
+			innerJoin(_table: unknown, _condition?: unknown) {
+				return query;
+			},
+			orderBy(_value?: unknown) {
+				return query;
+			},
+			get() {
+				return tableName ? dbState[tableName][0] : undefined;
+			},
+			all() {
+				return tableName ? [...dbState[tableName]] : [];
+			},
+		};
+		return query;
+	},
+	insert(table: unknown) {
+		const tableName = getTableName(table);
+		let pendingRows: Array<Record<string, unknown>> = [];
+		let insertedRows: Array<Record<string, unknown>> | null = null;
+
+		const commit = (): Array<Record<string, unknown>> => {
+			if (insertedRows) {
+				return insertedRows;
+			}
+			insertedRows = pendingRows.map((row) => withDefaults(tableName, row));
+			dbState[tableName].push(...insertedRows);
+			return insertedRows;
+		};
+
+		return {
+			values(value: Record<string, unknown> | Array<Record<string, unknown>>) {
+				pendingRows = Array.isArray(value) ? value : [value];
+				return {
+					returning() {
+						return {
+							get() {
+								return commit()[0];
+							},
+						};
+					},
+					onConflictDoUpdate({
+						set,
+					}: {
+						set: Record<string, unknown>;
+						target?: unknown;
+					}) {
+						return {
+							run() {
+								if (tableName !== "settings") {
+									const [record] = commit();
+									if (record) {
+										Object.assign(record, set);
+									}
+									return;
+								}
+
+								const record = withDefaults(tableName, pendingRows[0] ?? {});
+								const existing = dbState.settings[0];
+								if (existing) {
+									Object.assign(existing, record, set);
+								} else {
+									dbState.settings.push({ ...record, ...set });
+								}
+							},
+						};
+					},
+					run() {
+						commit();
+					},
+				};
+			},
+		};
+	},
+	update(table: unknown) {
+		const tableName = getTableName(table);
+		let patch: Record<string, unknown> = {};
+		return {
+			set(nextPatch: Record<string, unknown>) {
+				patch = nextPatch;
+				return {
+					where(_condition?: unknown) {
+						return {
+							run() {
+								const target = dbState[tableName][0];
+								if (target) {
+									Object.assign(target, patch);
+								}
+							},
+							returning() {
+								return {
+									get() {
+										const target = dbState[tableName][0];
+										if (target) {
+											Object.assign(target, patch);
+										}
+										return target;
+									},
+								};
+							},
+						};
+					},
+				};
+			},
+		};
+	},
+	delete(table: unknown) {
+		const tableName = getTableName(table);
+		return {
+			where(_condition?: unknown) {
+				return {
+					run() {
+						dbState[tableName].length = 0;
+					},
+				};
+			},
+		};
+	},
+};
+
+mock.module("main/lib/local-db", () => ({ localDb }));
 
 const TEST_DIR = join(
 	realpathSync(tmpdir()),
@@ -62,6 +287,8 @@ describe("Workspace creation with external worktree auto-import", () => {
 	let externalWorktreePath: string;
 
 	beforeEach(() => {
+		resetMockDb();
+
 		// Clean test directory
 		if (existsSync(TEST_DIR)) {
 			rmSync(TEST_DIR, { recursive: true, force: true });
@@ -82,7 +309,7 @@ describe("Workspace creation with external worktree auto-import", () => {
 				defaultBranch: "main",
 			})
 			.returning()
-			.get();
+			.get() as { id: string };
 		projectId = project.id;
 
 		// Create external worktree
@@ -164,7 +391,7 @@ describe("Workspace creation with external worktree auto-import", () => {
 		expect(result).toBeUndefined();
 	});
 
-	test("should preserve external worktree on disk when workspace deletion fails", async () => {
+	test("should preserve external worktree on disk when removing the workspace record", async () => {
 		// Create external worktree
 		createExternalWorktree(
 			mainRepoPath,
@@ -208,13 +435,16 @@ describe("Workspace creation with external worktree auto-import", () => {
 			.get();
 		expect(deletedWorkspace).toBeUndefined();
 
-		// Verify worktree record was deleted from DB
-		const deletedWorktree = localDb
+		// The full delete procedure removes the worktree record separately.
+		// This helper only deletes the workspace row and should leave the
+		// external worktree intact on disk.
+		const remainingWorktree = localDb
 			.select()
 			.from(worktrees)
 			.where(eq(worktrees.id, worktreeId))
 			.get();
-		expect(deletedWorktree).toBeUndefined();
+		expect(remainingWorktree).toBeDefined();
+		expect(remainingWorktree?.createdBySuperset).toBe(false);
 
 		// CRITICAL: Verify worktree still exists on disk (not deleted)
 		expect(existsSync(externalWorktreePath)).toBe(true);
@@ -228,6 +458,8 @@ describe("External worktree import via openExternalWorktree", () => {
 	let externalWorktreePath: string;
 
 	beforeEach(() => {
+		resetMockDb();
+
 		if (existsSync(TEST_DIR)) {
 			rmSync(TEST_DIR, { recursive: true, force: true });
 		}
@@ -245,7 +477,7 @@ describe("External worktree import via openExternalWorktree", () => {
 				defaultBranch: "main",
 			})
 			.returning()
-			.get();
+			.get() as { id: string };
 		projectId = project.id;
 
 		externalWorktreePath = join(TEST_DIR, "external-worktree");
