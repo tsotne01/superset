@@ -5,21 +5,9 @@ import { execWithShellEnv } from "../shell-env";
 import { parseUpstreamRef } from "../upstream-ref";
 import {
 	clearGitHubCachesForWorktree,
-	clearInFlightGitHubStatus,
-	clearInFlightPullRequestComments,
-	createGitHubStatusRequestId,
-	createPullRequestCommentsRequestId,
-	getCachedGitHubStatusState,
-	getCachedPullRequestCommentsState,
-	getInFlightGitHubStatus,
-	getInFlightPullRequestComments,
-	isCurrentGitHubStatusRequest,
-	isCurrentPullRequestCommentsRequest,
 	makePullRequestCommentsCacheKey,
-	setCachedGitHubStatus,
-	setCachedPullRequestComments,
-	setInFlightGitHubStatus,
-	setInFlightPullRequestComments,
+	readCachedGitHubStatus,
+	readCachedPullRequestComments,
 } from "./cache";
 import { fetchPullRequestComments } from "./comments";
 import { getPRForBranch } from "./pr-resolution";
@@ -95,7 +83,6 @@ export function resolveRemoteBranchNameForGitHubStatus({
 
 async function refreshGitHubPRStatus(
 	worktreePath: string,
-	requestId: number,
 ): Promise<GitHubStatus | null> {
 	try {
 		const repoContext = await getRepoContext(worktreePath, {
@@ -170,15 +157,9 @@ async function refreshGitHubPRStatus(
 			lastRefreshed: Date.now(),
 		};
 
-		if (isCurrentGitHubStatusRequest(worktreePath, requestId)) {
-			setCachedGitHubStatus(worktreePath, result);
-		}
-
 		return result;
 	} catch {
 		return null;
-	} finally {
-		clearInFlightGitHubStatus(worktreePath, requestId);
 	}
 }
 
@@ -186,63 +167,20 @@ async function refreshGitHubPRComments({
 	worktreePath,
 	repoNameWithOwner,
 	pullRequestNumber,
-	cacheKey,
-	requestId,
 }: {
 	worktreePath: string;
 	repoNameWithOwner: string;
 	pullRequestNumber: number;
-	cacheKey: string;
-	requestId: number;
 }): Promise<PullRequestComment[]> {
 	try {
-		const comments = await fetchPullRequestComments({
+		return await fetchPullRequestComments({
 			worktreePath,
 			repoNameWithOwner,
 			pullRequestNumber,
 		});
-		if (isCurrentPullRequestCommentsRequest(cacheKey, requestId)) {
-			setCachedPullRequestComments(cacheKey, comments);
-		}
-
-		return comments;
 	} catch {
 		return [];
-	} finally {
-		clearInFlightPullRequestComments(cacheKey, requestId);
 	}
-}
-
-function startGitHubPRStatusRefresh(
-	worktreePath: string,
-): Promise<GitHubStatus | null> {
-	const requestId = createGitHubStatusRequestId(worktreePath);
-	const promise = refreshGitHubPRStatus(worktreePath, requestId);
-	setInFlightGitHubStatus(worktreePath, promise, requestId);
-	return promise;
-}
-
-function startGitHubPRCommentsRefresh({
-	worktreePath,
-	repoNameWithOwner,
-	pullRequestNumber,
-	cacheKey,
-}: {
-	worktreePath: string;
-	repoNameWithOwner: string;
-	pullRequestNumber: number;
-	cacheKey: string;
-}): Promise<PullRequestComment[]> {
-	const requestId = createPullRequestCommentsRequestId(cacheKey);
-	const promise = refreshGitHubPRComments({
-		worktreePath,
-		repoNameWithOwner,
-		pullRequestNumber,
-		cacheKey,
-		requestId,
-	});
-	setInFlightPullRequestComments(cacheKey, promise, requestId);
-	return promise;
 }
 
 /**
@@ -252,25 +190,9 @@ function startGitHubPRCommentsRefresh({
 export async function fetchGitHubPRStatus(
 	worktreePath: string,
 ): Promise<GitHubStatus | null> {
-	const cached = getCachedGitHubStatusState(worktreePath);
-	if (cached?.isFresh) {
-		return cached.value;
-	}
-
-	const inFlight = getInFlightGitHubStatus(worktreePath);
-	if (cached) {
-		if (!inFlight) {
-			startGitHubPRStatusRefresh(worktreePath);
-		}
-
-		return cached.value;
-	}
-
-	if (inFlight) {
-		return inFlight;
-	}
-
-	return startGitHubPRStatusRefresh(worktreePath);
+	return readCachedGitHubStatus(worktreePath, () =>
+		refreshGitHubPRStatus(worktreePath),
+	);
 }
 
 export async function fetchGitHubPRComments({
@@ -298,35 +220,13 @@ export async function fetchGitHubPRComments({
 			repoNameWithOwner,
 			pullRequestNumber: pullRequestTarget.prNumber,
 		});
-		const cached = getCachedPullRequestCommentsState(cacheKey);
-		if (cached?.isFresh) {
-			return cached.value;
-		}
-
-		const inFlight = getInFlightPullRequestComments(cacheKey);
-		if (cached) {
-			if (!inFlight) {
-				startGitHubPRCommentsRefresh({
-					worktreePath,
-					repoNameWithOwner,
-					pullRequestNumber: pullRequestTarget.prNumber,
-					cacheKey,
-				});
-			}
-
-			return cached.value;
-		}
-
-		if (inFlight) {
-			return await inFlight;
-		}
-
-		return await startGitHubPRCommentsRefresh({
-			worktreePath,
-			repoNameWithOwner,
-			pullRequestNumber: pullRequestTarget.prNumber,
-			cacheKey,
-		});
+		return await readCachedPullRequestComments(cacheKey, () =>
+			refreshGitHubPRComments({
+				worktreePath,
+				repoNameWithOwner,
+				pullRequestNumber: pullRequestTarget.prNumber,
+			}),
+		);
 	} catch {
 		return [];
 	}

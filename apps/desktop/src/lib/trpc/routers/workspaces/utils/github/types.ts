@@ -37,6 +37,11 @@ export const GHCommentAuthorSchema = z.object({
 	avatar_url: z.string().optional(),
 });
 
+export const GHGraphQLCommentAuthorSchema = z.object({
+	login: z.string().optional(),
+	avatarUrl: z.string().optional(),
+});
+
 export const GHCommentSchema = z.object({
 	id: z.string().optional(),
 	author: GHCommentAuthorSchema.nullable().optional(),
@@ -57,7 +62,15 @@ export const GHReviewCommentSchema = z.object({
 });
 
 export const GHReviewThreadCommentSchema = z.object({
+	id: z.string().optional(),
 	databaseId: z.number().nullable().optional(),
+	author: GHGraphQLCommentAuthorSchema.nullable().optional(),
+	body: z.string().optional(),
+	createdAt: z.string().optional(),
+	url: z.string().optional(),
+	path: z.string().optional(),
+	line: z.number().nullable().optional(),
+	originalLine: z.number().nullable().optional(),
 });
 
 export const GHPageInfoSchema = z.object({
