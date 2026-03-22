@@ -3,7 +3,7 @@ import type { z } from "zod";
 import { execWithShellEnv } from "../shell-env";
 import {
 	GHIssueCommentSchema,
-	GHReviewThreadCommentSchema,
+	type GHReviewThreadCommentSchema,
 	GHReviewThreadCommentsConnectionSchema,
 	GHReviewThreadCommentsResponseSchema,
 	GHReviewThreadSchema,

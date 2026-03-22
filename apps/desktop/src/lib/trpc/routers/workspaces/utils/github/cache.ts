@@ -1,10 +1,10 @@
 import type { GitHubStatus, PullRequestComment } from "@superset/local-db";
-import type { RepoContext } from "./types";
 import {
-	createCachedResource,
-	type CacheState,
 	type CachedResourceReadOptions,
+	type CacheState,
+	createCachedResource,
 } from "./cached-resource";
+import type { RepoContext } from "./types";
 
 const GITHUB_STATUS_CACHE_TTL_MS = 10_000;
 const GITHUB_PR_COMMENTS_CACHE_TTL_MS = 30_000;
