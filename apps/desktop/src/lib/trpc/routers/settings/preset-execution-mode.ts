@@ -2,6 +2,7 @@ import {
 	normalizeExecutionMode,
 	type TerminalPreset,
 } from "@superset/local-db/schema/zod";
+import { normalizePresetProjectIds } from "shared/preset-project-targeting";
 
 export type PresetWithUnknownMode = Omit<TerminalPreset, "executionMode"> & {
 	executionMode?: unknown;
@@ -12,6 +13,7 @@ export function normalizeTerminalPreset(
 ): TerminalPreset {
 	return {
 		...preset,
+		projectIds: normalizePresetProjectIds(preset.projectIds),
 		executionMode: normalizeExecutionMode(preset.executionMode),
 	};
 }

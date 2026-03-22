@@ -15,6 +15,7 @@ function createPreset(mode?: unknown): PresetWithUnknownMode {
 		name: "preset",
 		cwd: "",
 		commands: ["echo hi"],
+		projectIds: undefined,
 		executionMode: mode,
 	};
 }
@@ -54,6 +55,29 @@ describe("normalizeTerminalPresets", () => {
 			"split-pane",
 			"new-tab",
 		] satisfies TerminalPreset["executionMode"][]);
+	});
+
+	it("normalizes missing or empty project targeting to null", () => {
+		const normalized = normalizeTerminalPresets([
+			{
+				...createPreset("new-tab"),
+				projectIds: undefined,
+			},
+			{
+				...createPreset("new-tab"),
+				projectIds: [],
+			},
+			{
+				...createPreset("new-tab"),
+				projectIds: ["project-a", "project-a", " project-b "],
+			},
+		]);
+
+		expect(normalized.map((preset) => preset.projectIds)).toEqual([
+			null,
+			null,
+			["project-a", "project-b"],
+		]);
 	});
 });
 

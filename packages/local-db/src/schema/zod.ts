@@ -90,6 +90,7 @@ export const terminalPresetSchema = z.object({
 	description: z.string().optional(),
 	cwd: z.string(),
 	commands: z.array(z.string()),
+	projectIds: z.array(z.string()).nullable().optional(),
 	pinnedToBar: z.boolean().optional(),
 	isDefault: z.boolean().optional(),
 	applyOnWorkspaceCreated: z.boolean().optional(),

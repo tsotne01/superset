@@ -57,6 +57,11 @@ import {
 	normalizeTerminalPresets,
 	type PresetWithUnknownMode,
 } from "./preset-execution-mode";
+import {
+	filterMatchingPresetsForProject,
+	isProjectTargetedPreset,
+	normalizePresetProjectIds,
+} from "shared/preset-project-targeting";
 
 function isValidRingtoneId(ringtoneId: string): boolean {
 	if (isBuiltInRingtoneId(ringtoneId)) {
@@ -175,12 +180,32 @@ function initializeDefaultPresets() {
 /** Get presets tagged with a given auto-apply field, falling back to the isDefault preset */
 export function getPresetsForTrigger(
 	field: "applyOnWorkspaceCreated" | "applyOnNewTab",
+	projectId?: string | null,
 ) {
-	const presets = getNormalizedTerminalPresets();
-	const tagged = presets.filter((p) => p[field]);
-	if (tagged.length > 0) return tagged;
-	const defaultPreset = presets.find((p) => p.isDefault);
-	return defaultPreset ? [defaultPreset] : [];
+	const presets = filterMatchingPresetsForProject(
+		getNormalizedTerminalPresets(),
+		projectId,
+	);
+	const targetedPresets = presets.filter(isProjectTargetedPreset);
+	const globalPresets = presets.filter((preset) => !isProjectTargetedPreset(preset));
+
+	const targetedTagged = targetedPresets.filter((preset) => preset[field]);
+	if (targetedTagged.length > 0) {
+		return targetedTagged;
+	}
+
+	const globalTagged = globalPresets.filter((preset) => preset[field]);
+	if (globalTagged.length > 0) {
+		return globalTagged;
+	}
+
+	const targetedDefaultPreset = targetedPresets.find((preset) => preset.isDefault);
+	if (targetedDefaultPreset) {
+		return [targetedDefaultPreset];
+	}
+
+	const globalDefaultPreset = globalPresets.find((preset) => preset.isDefault);
+	return globalDefaultPreset ? [globalDefaultPreset] : [];
 }
 
 export const createSettingsRouter = () => {
@@ -245,6 +270,7 @@ export const createSettingsRouter = () => {
 					description: z.string().optional(),
 					cwd: z.string(),
 					commands: z.array(z.string()),
+					projectIds: z.array(z.string()).nullable().optional(),
 					pinnedToBar: z.boolean().optional(),
 					executionMode: z.enum(EXECUTION_MODES).optional(),
 				}),
@@ -253,6 +279,7 @@ export const createSettingsRouter = () => {
 				const preset: TerminalPreset = {
 					id: crypto.randomUUID(),
 					...input,
+					projectIds: normalizePresetProjectIds(input.projectIds),
 					executionMode: input.executionMode ?? "new-tab",
 				};
 
@@ -273,6 +300,7 @@ export const createSettingsRouter = () => {
 						description: z.string().optional(),
 						cwd: z.string().optional(),
 						commands: z.array(z.string()).optional(),
+						projectIds: z.array(z.string()).nullable().optional(),
 						pinnedToBar: z.boolean().optional(),
 						executionMode: z.enum(EXECUTION_MODES).optional(),
 					}),
@@ -295,6 +323,8 @@ export const createSettingsRouter = () => {
 				if (input.patch.cwd !== undefined) preset.cwd = input.patch.cwd;
 				if (input.patch.commands !== undefined)
 					preset.commands = input.patch.commands;
+				if (input.patch.projectIds !== undefined)
+					preset.projectIds = normalizePresetProjectIds(input.patch.projectIds);
 				if (input.patch.pinnedToBar !== undefined)
 					preset.pinnedToBar = input.patch.pinnedToBar;
 				if (input.patch.executionMode !== undefined)
@@ -409,13 +439,32 @@ export const createSettingsRouter = () => {
 			return presets.find((p) => p.isDefault) ?? null;
 		}),
 
-		getWorkspaceCreationPresets: publicProcedure.query(() =>
-			getPresetsForTrigger("applyOnWorkspaceCreated"),
-		),
+		getWorkspaceCreationPresets: publicProcedure
+			.input(
+				z
+					.object({
+						projectId: z.string().nullable().optional(),
+					})
+					.optional(),
+			)
+			.query(({ input }) =>
+				getPresetsForTrigger(
+					"applyOnWorkspaceCreated",
+					input?.projectId ?? null,
+				),
+			),
 
-		getNewTabPresets: publicProcedure.query(() =>
-			getPresetsForTrigger("applyOnNewTab"),
-		),
+		getNewTabPresets: publicProcedure
+			.input(
+				z
+					.object({
+						projectId: z.string().nullable().optional(),
+					})
+					.optional(),
+			)
+			.query(({ input }) =>
+				getPresetsForTrigger("applyOnNewTab", input?.projectId ?? null),
+			),
 
 		getSelectedRingtoneId: publicProcedure.query(() => {
 			const row = getSettings();

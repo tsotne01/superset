@@ -145,7 +145,7 @@ function WorkspacePage() {
 		splitPaneVertical,
 		splitPaneHorizontal,
 		openPreset,
-	} = useTabsWithPresets();
+	} = useTabsWithPresets(workspace?.projectId);
 	const addChatTab = useTabsStore((s) => s.addChatTab);
 	const reopenClosedTab = useTabsStore((s) => s.reopenClosedTab);
 	const addBrowserTab = useTabsStore((s) => s.addBrowserTab);
@@ -187,7 +187,7 @@ function WorkspacePage() {
 		worktreePath: workspace?.worktreePath,
 	});
 
-	const { presets } = usePresets();
+	const { matchedPresets: presets } = usePresets(workspace?.projectId);
 
 	const openTabWithPreset = useCallback(
 		(presetIndex: number) => {
