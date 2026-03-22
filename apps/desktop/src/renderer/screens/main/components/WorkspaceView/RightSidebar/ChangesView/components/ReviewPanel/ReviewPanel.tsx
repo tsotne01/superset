@@ -45,6 +45,9 @@ export function ReviewPanel({
 }: ReviewPanelProps) {
 	const [checksOpen, setChecksOpen] = useState(true);
 	const [commentsOpen, setCommentsOpen] = useState(true);
+	const [openCommentsGroupOpen, setOpenCommentsGroupOpen] = useState(true);
+	const [resolvedCommentsGroupOpen, setResolvedCommentsGroupOpen] =
+		useState(false);
 	const [copiedActionKey, setCopiedActionKey] = useState<string | null>(null);
 	const copiedActionResetTimeoutRef = useRef<ReturnType<
 		typeof setTimeout
@@ -270,6 +273,45 @@ export function ReviewPanel({
 			);
 		});
 
+	const renderCommentSection = ({
+		title,
+		comments,
+		isOpen,
+		onOpenChange,
+	}: {
+		title: string;
+		comments: PullRequestComment[];
+		isOpen: boolean;
+		onOpenChange: (open: boolean) => void;
+	}) => (
+		<Collapsible
+			open={isOpen}
+			onOpenChange={onOpenChange}
+			className="min-w-0 overflow-hidden"
+		>
+			<CollapsibleTrigger
+				className={cn(
+					"group flex w-full items-center gap-1.5 px-1.5 py-1 text-left min-w-0",
+					"hover:bg-accent/30 cursor-pointer transition-colors",
+				)}
+			>
+				<VscChevronRight
+					className={cn(
+						"size-3 text-muted-foreground shrink-0 transition-transform duration-150",
+						isOpen && "rotate-90",
+					)}
+				/>
+				<span className="text-xs font-medium truncate">{title}</span>
+				<span className="text-[10px] text-muted-foreground shrink-0">
+					{comments.length}
+				</span>
+			</CollapsibleTrigger>
+			<CollapsibleContent className="min-w-0 overflow-hidden">
+				{renderCommentList(comments)}
+			</CollapsibleContent>
+		</Collapsible>
+	);
+
 	return (
 		<div className="flex h-full min-h-0 flex-col overflow-y-auto">
 			<div className="border-b border-border/70 px-2 py-2">
@@ -461,22 +503,22 @@ export function ReviewPanel({
 							</div>
 						) : (
 							<>
-								{activeComments.length > 0 ? (
-									<div>
-										{resolvedComments.length > 0 ? (
-											<div className="px-1.5 pb-1 pt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-												Open
-											</div>
-										) : null}
-										{renderCommentList(activeComments)}
-									</div>
-								) : null}
+								{activeComments.length > 0
+									? renderCommentSection({
+											title: "Open",
+											comments: activeComments,
+											isOpen: openCommentsGroupOpen,
+											onOpenChange: setOpenCommentsGroupOpen,
+										})
+									: null}
 								{resolvedComments.length > 0 ? (
-									<div className="pt-2">
-										<div className="px-1.5 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-											Resolved
-										</div>
-										{renderCommentList(resolvedComments)}
+									<div className="pt-1">
+										{renderCommentSection({
+											title: "Resolved",
+											comments: resolvedComments,
+											isOpen: resolvedCommentsGroupOpen,
+											onOpenChange: setResolvedCommentsGroupOpen,
+										})}
 									</div>
 								) : null}
 							</>
