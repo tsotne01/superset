@@ -1,6 +1,38 @@
 import type { PullRequestComment } from "@superset/local-db";
 import { execWithShellEnv } from "../shell-env";
-import { GHIssueCommentSchema, GHReviewCommentSchema } from "./types";
+import {
+	GHIssueCommentSchema,
+	GHReviewCommentSchema,
+	GHReviewThreadsResponseSchema,
+} from "./types";
+
+const REVIEW_THREADS_QUERY = `
+query PullRequestReviewThreads(
+	$owner: String!
+	$name: String!
+	$pullRequestNumber: Int!
+	$after: String
+) {
+	repository(owner: $owner, name: $name) {
+		pullRequest(number: $pullRequestNumber) {
+			reviewThreads(first: 100, after: $after) {
+				nodes {
+					isResolved
+					comments(first: 100) {
+						nodes {
+							databaseId
+						}
+					}
+				}
+				pageInfo {
+					hasNextPage
+					endCursor
+				}
+			}
+		}
+	}
+}
+`;
 
 function parseTimestamp(value?: string): number | undefined {
 	if (!value) {
@@ -35,6 +67,7 @@ export function parsePaginatedApiArray(stdout: string): unknown[] {
 
 export function parseReviewCommentsResponse(
 	raw: unknown[],
+	resolvedReviewCommentIds: ReadonlySet<number> = new Set<number>(),
 ): PullRequestComment[] {
 	return raw
 		.flatMap((item) => {
@@ -62,6 +95,7 @@ export function parseReviewCommentsResponse(
 					kind: "review" as const,
 					path: comment.path,
 					line: comment.line ?? comment.original_line ?? undefined,
+					isResolved: resolvedReviewCommentIds.has(comment.id),
 				},
 			];
 		})
@@ -95,6 +129,7 @@ export function parseConversationCommentsResponse(
 					createdAt: parseTimestamp(comment.created_at),
 					url: comment.html_url,
 					kind: "conversation" as const,
+					isResolved: false,
 				},
 			];
 		})
@@ -130,17 +165,81 @@ async function fetchPaginatedCommentsEndpoint(
 	return parsePaginatedApiArray(stdout);
 }
 
-async function fetchReviewCommentsForPullRequest(
+async function fetchResolvedReviewCommentIdsForPullRequest(
 	worktreePath: string,
 	repoNameWithOwner: string,
 	pullRequestNumber: number,
-): Promise<PullRequestComment[]> {
-	const pages = await fetchPaginatedCommentsEndpoint(
-		worktreePath,
-		`repos/${repoNameWithOwner}/pulls/${pullRequestNumber}/comments?per_page=100`,
-	);
+): Promise<Set<number>> {
+	const [owner, name] = repoNameWithOwner.split("/");
+	if (!owner || !name) {
+		return new Set<number>();
+	}
 
-	return parseReviewCommentsResponse(pages);
+	const resolvedIds = new Set<number>();
+	let afterCursor: string | null = null;
+
+	while (true) {
+		const args = [
+			"api",
+			"graphql",
+			"-f",
+			`query=${REVIEW_THREADS_QUERY}`,
+			"-F",
+			`owner=${owner}`,
+			"-F",
+			`name=${name}`,
+			"-F",
+			`pullRequestNumber=${pullRequestNumber}`,
+		];
+		if (afterCursor) {
+			args.push("-F", `after=${afterCursor}`);
+		}
+
+		const { stdout } = await execWithShellEnv("gh", args, {
+			cwd: worktreePath,
+		});
+		const parsed = GHReviewThreadsResponseSchema.safeParse(
+			JSON.parse(stdout.trim()),
+		);
+		if (!parsed.success) {
+			console.warn(
+				"[GitHub] Failed to parse pull request review threads response:",
+				parsed.error.message,
+			);
+			return resolvedIds;
+		}
+
+		const reviewThreads =
+			parsed.data.data.repository?.pullRequest?.reviewThreads ?? null;
+		if (!reviewThreads) {
+			return resolvedIds;
+		}
+
+		for (const thread of reviewThreads.nodes ?? []) {
+			if (!thread) {
+				continue;
+			}
+
+			if (!thread.isResolved) {
+				continue;
+			}
+
+			for (const comment of thread.comments?.nodes ?? []) {
+				if (comment && typeof comment.databaseId === "number") {
+					resolvedIds.add(comment.databaseId);
+				}
+			}
+		}
+
+		if (
+			!reviewThreads.pageInfo.hasNextPage ||
+			!reviewThreads.pageInfo.endCursor
+		) {
+			return resolvedIds;
+		}
+
+		afterCursor = reviewThreads.pageInfo.endCursor;
+	}
 }
 
 async function fetchConversationCommentsForPullRequest(
@@ -165,28 +264,49 @@ export async function fetchPullRequestComments({
 	repoNameWithOwner: string;
 	pullRequestNumber: number;
 }): Promise<PullRequestComment[]> {
-	const [reviewResult, conversationResult] = await Promise.allSettled([
-		fetchReviewCommentsForPullRequest(
-			worktreePath,
-			repoNameWithOwner,
-			pullRequestNumber,
-		),
-		fetchConversationCommentsForPullRequest(
-			worktreePath,
-			repoNameWithOwner,
-			pullRequestNumber,
-		),
-	]);
+	const [reviewPagesResult, resolvedIdsResult, conversationResult] =
+		await Promise.allSettled([
+			fetchPaginatedCommentsEndpoint(
+				worktreePath,
+				`repos/${repoNameWithOwner}/pulls/${pullRequestNumber}/comments?per_page=100`,
+			),
+			fetchResolvedReviewCommentIdsForPullRequest(
+				worktreePath,
+				repoNameWithOwner,
+				pullRequestNumber,
+			),
+			fetchConversationCommentsForPullRequest(
+				worktreePath,
+				repoNameWithOwner,
+				pullRequestNumber,
+			),
+		]);
 
+	const resolvedReviewCommentIds =
+		resolvedIdsResult.status === "fulfilled"
+			? resolvedIdsResult.value
+			: new Set<number>();
 	const reviewComments =
-		reviewResult.status === "fulfilled" ? reviewResult.value : [];
+		reviewPagesResult.status === "fulfilled"
+			? parseReviewCommentsResponse(
+					reviewPagesResult.value,
+					resolvedReviewCommentIds,
+				)
+			: [];
 	const conversationComments =
 		conversationResult.status === "fulfilled" ? conversationResult.value : [];
 
-	if (reviewResult.status === "rejected") {
+	if (reviewPagesResult.status === "rejected") {
 		console.warn(
 			"[GitHub] Failed to fetch pull request review comments:",
-			reviewResult.reason,
+			reviewPagesResult.reason,
+		);
+	}
+
+	if (resolvedIdsResult.status === "rejected") {
+		console.warn(
+			"[GitHub] Failed to fetch pull request review thread resolution state:",
+			resolvedIdsResult.reason,
 		);
 	}
 

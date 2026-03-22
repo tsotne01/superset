@@ -173,6 +173,16 @@ export function buildAllCommentsClipboardText(
 		.join("\n\n---\n\n");
 }
 
+export function splitPullRequestComments(comments: PullRequestComment[]): {
+	active: PullRequestComment[];
+	resolved: PullRequestComment[];
+} {
+	return {
+		active: comments.filter((comment) => comment.isResolved !== true),
+		resolved: comments.filter((comment) => comment.isResolved === true),
+	};
+}
+
 export function getCommentCopyActionKey(
 	commentId: PullRequestComment["id"],
 ): string {

@@ -99,6 +99,41 @@ describe("parseReviewCommentsResponse", () => {
 				kind: "review",
 				path: "apps/desktop/src/file.ts",
 				line: 19,
+				isResolved: false,
+			},
+		]);
+	});
+
+	test("marks resolved review comments from review thread metadata", () => {
+		expect(
+			parseReviewCommentsResponse(
+				[
+					{
+						id: 42,
+						user: {
+							login: "octocat",
+						},
+						body: "Please rename this helper.",
+						created_at: "2026-03-21T04:19:41Z",
+						html_url:
+							"https://github.com/superset-sh/superset/pull/2681#discussion_r42",
+						path: "apps/desktop/src/file.ts",
+						line: 19,
+					},
+				],
+				new Set([42]),
+			),
+		).toEqual([
+			{
+				id: "review-42",
+				authorLogin: "octocat",
+				body: "Please rename this helper.",
+				createdAt: new Date("2026-03-21T04:19:41Z").getTime(),
+				url: "https://github.com/superset-sh/superset/pull/2681#discussion_r42",
+				kind: "review",
+				path: "apps/desktop/src/file.ts",
+				line: 19,
+				isResolved: true,
 			},
 		]);
 	});
@@ -145,6 +180,7 @@ describe("parseConversationCommentsResponse", () => {
 				createdAt: new Date("2026-03-21T04:08:13Z").getTime(),
 				url: "https://github.com/superset-sh/superset/pull/2681#issuecomment-7",
 				kind: "conversation",
+				isResolved: false,
 			},
 		]);
 	});
@@ -161,6 +197,7 @@ describe("mergePullRequestComments", () => {
 						body: "Inline note",
 						createdAt: 200,
 						kind: "review",
+						isResolved: false,
 					},
 				],
 				[
@@ -170,6 +207,7 @@ describe("mergePullRequestComments", () => {
 						body: "Top-level note",
 						createdAt: 100,
 						kind: "conversation",
+						isResolved: false,
 					},
 				],
 			),
@@ -180,6 +218,7 @@ describe("mergePullRequestComments", () => {
 				body: "Inline note",
 				createdAt: 200,
 				kind: "review",
+				isResolved: false,
 			},
 			{
 				id: "conversation-7",
@@ -187,6 +226,7 @@ describe("mergePullRequestComments", () => {
 				body: "Top-level note",
 				createdAt: 100,
 				kind: "conversation",
+				isResolved: false,
 			},
 		]);
 	});

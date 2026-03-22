@@ -9,12 +9,7 @@ import { Skeleton } from "@superset/ui/skeleton";
 import { toast } from "@superset/ui/sonner";
 import { cn } from "@superset/ui/utils";
 import { useEffect, useRef, useState } from "react";
-import {
-	LuArrowUpRight,
-	LuCheck,
-	LuCopy,
-	LuMessageSquareText,
-} from "react-icons/lu";
+import { LuArrowUpRight, LuCheck, LuCopy } from "react-icons/lu";
 import { VscChevronRight } from "react-icons/vsc";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { PRIcon } from "renderer/screens/main/components/PRIcon";
@@ -32,6 +27,7 @@ import {
 	prStateLabel,
 	resolveCheckDestinationUrl,
 	reviewDecisionConfig,
+	splitPullRequestComments,
 } from "./utils";
 
 interface ReviewPanelProps {
@@ -98,14 +94,6 @@ export function ReviewPanel({
 			text: buildCommentClipboardText(comment),
 			actionKey: getCommentCopyActionKey(comment.id),
 			errorLabel: "Failed to copy comment",
-		});
-	};
-
-	const handleCopyCommentsList = () => {
-		void copyTextToClipboard({
-			text: buildAllCommentsClipboardText(comments),
-			actionKey: ALL_COMMENTS_COPY_ACTION_KEY,
-			errorLabel: "Failed to copy comments",
 		});
 	};
 
@@ -176,9 +164,111 @@ export function ReviewPanel({
 	const checksStatusConfig = checkSummaryIconConfig[checksStatus];
 	const ChecksStatusIcon = checksStatusConfig.icon;
 	const hasComments = comments.length > 0;
+	const { active: activeComments, resolved: resolvedComments } =
+		splitPullRequestComments(comments);
+	const orderedCommentsForCopy =
+		resolvedComments.length > 0
+			? [...activeComments, ...resolvedComments]
+			: activeComments;
 	const commentsCountLabel = isCommentsLoading ? "..." : comments.length;
 	const copyAllCommentsLabel =
 		copiedActionKey === ALL_COMMENTS_COPY_ACTION_KEY ? "Copied" : "Copy all";
+
+	const handleCopyCommentsList = () => {
+		void copyTextToClipboard({
+			text: buildAllCommentsClipboardText(orderedCommentsForCopy),
+			actionKey: ALL_COMMENTS_COPY_ACTION_KEY,
+			errorLabel: "Failed to copy comments",
+		});
+	};
+
+	const renderCommentList = (list: PullRequestComment[]) =>
+		list.map((comment) => {
+			const age = formatShortAge(comment.createdAt);
+			const commentCopyActionKey = getCommentCopyActionKey(comment.id);
+			const isCopied = copiedActionKey === commentCopyActionKey;
+			const content = (
+				<>
+					<Avatar className="mt-0.5 size-5 shrink-0">
+						{comment.avatarUrl ? (
+							<AvatarImage src={comment.avatarUrl} alt={comment.authorLogin} />
+						) : null}
+						<AvatarFallback className="text-[10px] font-medium">
+							{getCommentAvatarFallback(comment.authorLogin)}
+						</AvatarFallback>
+					</Avatar>
+					<div className="min-w-0 flex-1">
+						<div className="flex items-center gap-1.5">
+							<span className="truncate text-xs font-medium text-foreground">
+								{comment.authorLogin}
+							</span>
+							<span className="shrink-0 rounded border border-border/70 bg-muted/35 px-1 py-0 text-[9px] uppercase tracking-wide text-muted-foreground">
+								{getCommentKindText(comment)}
+							</span>
+							{age ? (
+								<span className="shrink-0 text-[10px] text-muted-foreground">
+									{age}
+								</span>
+							) : null}
+						</div>
+						<p className="mt-0.5 line-clamp-1 text-xs leading-4 text-muted-foreground">
+							{getCommentPreviewText(comment.body)}
+						</p>
+					</div>
+				</>
+			);
+
+			return (
+				<div
+					key={comment.id}
+					className="group flex items-start gap-1 rounded-sm px-1.5 py-1.5 transition-colors hover:bg-accent/30"
+				>
+					{comment.url ? (
+						<a
+							href={comment.url}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="flex min-w-0 flex-1 items-start gap-2"
+						>
+							{content}
+						</a>
+					) : (
+						<div className="flex min-w-0 flex-1 items-start gap-2">
+							{content}
+						</div>
+					)}
+					<div className="mt-0.5 flex shrink-0 flex-col gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+						{comment.url ? (
+							<a
+								href={comment.url}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+								aria-label="Open comment on GitHub"
+							>
+								<LuArrowUpRight className="size-3" />
+							</a>
+						) : null}
+						<button
+							type="button"
+							className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+							onClick={(event) => {
+								event.preventDefault();
+								event.stopPropagation();
+								handleCopySingleComment(comment);
+							}}
+							aria-label={isCopied ? "Copied comment" : "Copy comment"}
+						>
+							{isCopied ? (
+								<LuCheck className="size-3" />
+							) : (
+								<LuCopy className="size-3" />
+							)}
+						</button>
+					</div>
+				</div>
+			);
+		});
 
 	return (
 		<div className="flex h-full min-h-0 flex-col overflow-y-auto">
@@ -333,7 +423,6 @@ export function ReviewPanel({
 								commentsOpen && "rotate-90",
 							)}
 						/>
-						<LuMessageSquareText className="size-3.5 shrink-0 text-muted-foreground" />
 						<span className="text-xs font-medium truncate">Comments</span>
 						<span className="text-[10px] text-muted-foreground shrink-0">
 							{commentsCountLabel}
@@ -371,99 +460,26 @@ export function ReviewPanel({
 								No comments yet.
 							</div>
 						) : (
-							comments.map((comment) => {
-								const age = formatShortAge(comment.createdAt);
-								const commentCopyActionKey = getCommentCopyActionKey(
-									comment.id,
-								);
-								const isCopied = copiedActionKey === commentCopyActionKey;
-								const content = (
-									<>
-										<Avatar className="mt-0.5 size-5 shrink-0">
-											{comment.avatarUrl ? (
-												<AvatarImage
-													src={comment.avatarUrl}
-													alt={comment.authorLogin}
-												/>
-											) : null}
-											<AvatarFallback className="text-[10px] font-medium">
-												{getCommentAvatarFallback(comment.authorLogin)}
-											</AvatarFallback>
-										</Avatar>
-										<div className="min-w-0 flex-1">
-											<div className="flex items-center gap-1.5">
-												<span className="truncate text-xs font-medium text-foreground">
-													{comment.authorLogin}
-												</span>
-												<span className="shrink-0 rounded border border-border/70 bg-muted/35 px-1 py-0 text-[9px] uppercase tracking-wide text-muted-foreground">
-													{getCommentKindText(comment)}
-												</span>
-												{age && (
-													<span className="shrink-0 text-[10px] text-muted-foreground">
-														{age}
-													</span>
-												)}
+							<>
+								{activeComments.length > 0 ? (
+									<div>
+										{resolvedComments.length > 0 ? (
+											<div className="px-1.5 pb-1 pt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+												Open
 											</div>
-											<p className="mt-0.5 line-clamp-1 text-xs leading-4 text-muted-foreground">
-												{getCommentPreviewText(comment.body)}
-											</p>
-										</div>
-									</>
-								);
-
-								return (
-									<div
-										key={comment.id}
-										className="group flex items-start gap-1 rounded-sm px-1.5 py-1.5 transition-colors hover:bg-accent/30"
-									>
-										{comment.url ? (
-											<a
-												href={comment.url}
-												target="_blank"
-												rel="noopener noreferrer"
-												className="flex min-w-0 flex-1 items-start gap-2"
-											>
-												{content}
-											</a>
-										) : (
-											<div className="flex min-w-0 flex-1 items-start gap-2">
-												{content}
-											</div>
-										)}
-										<div className="mt-0.5 flex shrink-0 flex-col gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-											{comment.url ? (
-												<a
-													href={comment.url}
-													target="_blank"
-													rel="noopener noreferrer"
-													className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-													aria-label="Open comment on GitHub"
-												>
-													<LuArrowUpRight className="size-3" />
-												</a>
-											) : null}
-											<button
-												type="button"
-												className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-												onClick={(event) => {
-													event.preventDefault();
-													event.stopPropagation();
-													handleCopySingleComment(comment);
-												}}
-												aria-label={
-													isCopied ? "Copied comment" : "Copy comment"
-												}
-											>
-												{isCopied ? (
-													<LuCheck className="size-3" />
-												) : (
-													<LuCopy className="size-3" />
-												)}
-											</button>
-										</div>
+										) : null}
+										{renderCommentList(activeComments)}
 									</div>
-								);
-							})
+								) : null}
+								{resolvedComments.length > 0 ? (
+									<div className="pt-2">
+										<div className="px-1.5 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+											Resolved
+										</div>
+										{renderCommentList(resolvedComments)}
+									</div>
+								) : null}
+							</>
 						)}
 					</div>
 				</CollapsibleContent>

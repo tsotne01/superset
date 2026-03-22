@@ -56,6 +56,40 @@ export const GHReviewCommentSchema = z.object({
 	original_line: z.number().nullable().optional(),
 });
 
+export const GHReviewThreadCommentSchema = z.object({
+	databaseId: z.number().nullable().optional(),
+});
+
+export const GHReviewThreadSchema = z.object({
+	isResolved: z.boolean().optional(),
+	comments: z
+		.object({
+			nodes: z.array(GHReviewThreadCommentSchema.nullable()).optional(),
+		})
+		.nullable()
+		.optional(),
+});
+
+export const GHReviewThreadsResponseSchema = z.object({
+	data: z.object({
+		repository: z
+			.object({
+				pullRequest: z
+					.object({
+						reviewThreads: z.object({
+							nodes: z.array(GHReviewThreadSchema.nullable()).optional(),
+							pageInfo: z.object({
+								hasNextPage: z.boolean(),
+								endCursor: z.string().nullable(),
+							}),
+						}),
+					})
+					.nullable(),
+			})
+			.nullable(),
+	}),
+});
+
 export const GHIssueCommentSchema = z.object({
 	id: z.number(),
 	user: GHCommentAuthorSchema.nullable().optional(),
