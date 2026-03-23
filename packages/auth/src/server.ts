@@ -95,10 +95,12 @@ export const auth = betterAuth({
 		github: {
 			clientId: env.GH_CLIENT_ID,
 			clientSecret: env.GH_CLIENT_SECRET,
+			redirectURI: `${env.NEXT_PUBLIC_WEB_URL}/api/auth/callback/github`,
 		},
 		google: {
 			clientId: env.GOOGLE_CLIENT_ID,
 			clientSecret: env.GOOGLE_CLIENT_SECRET,
+			redirectURI: `${env.NEXT_PUBLIC_WEB_URL}/api/auth/callback/google`,
 		},
 	},
 	databaseHooks: {
