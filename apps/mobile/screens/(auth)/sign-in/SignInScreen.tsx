@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Image, Linking, View } from "react-native";
 import { Text } from "@/components/ui/text";
 import { signIn } from "@/lib/auth/client";
+import { env } from "@/lib/env";
 
 import type { SocialProvider } from "./components/SocialButton";
 import { SocialButton } from "./components/SocialButton";
@@ -17,7 +18,7 @@ export function SignInScreen() {
 		try {
 			await signIn.social({
 				provider,
-				callbackURL: "/",
+				callbackURL: `${env.EXPO_PUBLIC_DEEP_LINK_SCHEME}://`,
 			});
 		} catch (err) {
 			const message =
