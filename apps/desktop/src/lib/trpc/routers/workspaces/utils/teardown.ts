@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -9,6 +10,22 @@ import { buildSafeEnv, sanitizeEnv } from "main/lib/terminal/env";
 import { SUPERSET_DIR_NAME } from "shared/constants";
 import { removeWorktree } from "./git";
 import { loadSetupConfig } from "./setup";
+
+/**
+ * Find the best available bash on Windows.
+ * Prefers Git Bash over WSL bash since WSL distros may not have bash installed.
+ */
+function getWindowsBash(): string {
+	const candidates = [
+		"C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+		"C:\\Program Files (x86)\\Git\\usr\\bin\\bash.exe",
+		"C:\\Program Files\\Git\\bin\\bash.exe",
+	];
+	for (const p of candidates) {
+		if (existsSync(p)) return p;
+	}
+	return "bash"; // fallback — may be WSL bash
+}
 
 const TEARDOWN_TIMEOUT_MS = 60_000;
 
@@ -45,7 +62,7 @@ export async function runTeardown({
 		const shell =
 			process.env.SHELL ||
 			(process.platform === "win32"
-				? "bash"
+				? getWindowsBash()
 				: process.platform === "darwin"
 					? "/bin/zsh"
 					: "/bin/bash");
@@ -135,6 +152,14 @@ export async function runTeardown({
 			`Teardown failed for workspace ${workspaceName}:`,
 			errorMessage,
 		);
+		// On Windows, bash may be unavailable or misconfigured (e.g. WSL without bash).
+		// Treat teardown failures as non-fatal so workspace deletion always completes.
+		if (process.platform === "win32") {
+			console.warn(
+				`[teardown] Treating failure as non-fatal on Windows to allow deletion to proceed.`,
+			);
+			return { success: true };
+		}
 		return {
 			success: false,
 			error: errorMessage,
