@@ -26,15 +26,9 @@ const config: NextConfig = {
 	},
 
 	async rewrites() {
-		const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "https://api.superset.sh";
 		return [
-			// Proxy all auth requests through the web domain so cookies are
-			// set on superset-web-umber.vercel.app instead of the API domain.
-			// This allows the desktop OAuth success page to read the session.
-			{
-				source: "/api/auth/:path*",
-				destination: `${apiUrl}/api/auth/:path*`,
-			},
+			// /api/auth/* is handled by the real route handler at
+			// app/api/auth/[...path]/route.ts which properly forwards Set-Cookie.
 			{
 				source: "/ingest/static/:path*",
 				destination: "https://us-assets.i.posthog.com/static/:path*",
