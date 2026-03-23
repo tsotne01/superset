@@ -41,6 +41,8 @@ import { formatPrice, getOrganizationOwners } from "./utils";
 
 const qstash = new Client({ token: env.QSTASH_TOKEN });
 
+const FROM_EMAIL = `Superset <${env.RESEND_FROM_EMAIL}>`;
+
 const NOTIFY_SLACK_URL = `${env.NEXT_PUBLIC_API_URL}/api/integrations/stripe/jobs/notify-slack`;
 const desktopDevPort = process.env.DESKTOP_VITE_PORT || "5173";
 const desktopDevOrigins =
@@ -237,7 +239,7 @@ export const auth = betterAuth({
 				});
 
 				await resend.emails.send({
-					from: "Superset <onboarding@resend.dev>",
+					from: FROM_EMAIL,
 					to: data.email,
 					subject: `${data.inviter.user.name} invited you to join ${data.organization.name}`,
 					react: OrganizationInvitationEmail({
@@ -346,7 +348,7 @@ export const auth = betterAuth({
 
 					if (acceptedInvitation) {
 						await resend.emails.send({
-							from: "Superset <onboarding@resend.dev>",
+							from: FROM_EMAIL,
 							to: user.email,
 							subject: `You've been added to ${organization.name}`,
 							react: MemberAddedEmail({
@@ -394,7 +396,7 @@ export const auth = betterAuth({
 
 					await resend.batch.send(
 						owners.map((owner) => ({
-							from: "Superset <onboarding@resend.dev>",
+							from: FROM_EMAIL,
 							to: owner.email,
 							subject: `Billing update: New member added to ${organization.name}`,
 							react: MemberAddedBillingEmail({
@@ -431,7 +433,7 @@ export const auth = betterAuth({
 
 				afterRemoveMember: async ({ user, organization }) => {
 					await resend.emails.send({
-						from: "Superset <onboarding@resend.dev>",
+						from: FROM_EMAIL,
 						to: user.email,
 						subject: `You've been removed from ${organization.name}`,
 						react: MemberRemovedEmail({
@@ -483,7 +485,7 @@ export const auth = betterAuth({
 
 					await resend.batch.send(
 						owners.map((owner) => ({
-							from: "Superset <onboarding@resend.dev>",
+							from: FROM_EMAIL,
 							to: owner.email,
 							subject: `Billing update: Member removed from ${organization.name}`,
 							react: MemberRemovedBillingEmail({
@@ -663,7 +665,7 @@ export const auth = betterAuth({
 
 					await resend.batch.send(
 						owners.map((owner) => ({
-							from: "Superset <onboarding@resend.dev>",
+							from: FROM_EMAIL,
 							to: owner.email,
 							subject: `Welcome to Superset ${plan.name}!`,
 							react: SubscriptionStartedEmail({
@@ -712,7 +714,7 @@ export const auth = betterAuth({
 
 					await resend.batch.send(
 						owners.map((owner) => ({
-							from: "Superset <onboarding@resend.dev>",
+							from: FROM_EMAIL,
 							to: owner.email,
 							subject: `Your ${subscription.plan} subscription has been cancelled`,
 							react: SubscriptionCancelledEmail({
@@ -774,7 +776,7 @@ export const auth = betterAuth({
 
 						await resend.batch.send(
 							owners.map((owner) => ({
-								from: "Superset <onboarding@resend.dev>",
+								from: FROM_EMAIL,
 								to: owner.email,
 								subject: `Payment failed for ${org.name}`,
 								react: PaymentFailedEmail({
