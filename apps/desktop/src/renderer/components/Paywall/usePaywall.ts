@@ -9,7 +9,8 @@ export function usePaywall() {
 
 	function hasAccess(feature: GatedFeature): boolean {
 		void feature;
-		return userPlan === "pro" || userPlan === "enterprise";
+		void userPlan;
+		return true; // All features unlocked — no billing required
 	}
 
 	function gateFeature(
