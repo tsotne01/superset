@@ -7,8 +7,11 @@ import { type NextRequest, NextResponse } from "next/server";
  * Next.js rewrites silently drop Set-Cookie from upstream responses, which
  * breaks session persistence. A real route handler forwards all headers.
  *
- * Uses getSetCookie() to correctly handle multiple Set-Cookie headers
- * (the Headers constructor merges them with commas which breaks cookie parsing).
+ * OAuth callbacks use redirect:"manual" so the browser handles the final
+ * navigation. All other requests use redirect:"follow" so the server
+ * follows any internal API redirects (e.g. cookie-cache refresh 307s)
+ * and returns the final JSON response — preventing the browser from
+ * following redirects directly to the API domain where it has no cookies.
  */
 const API_BASE =
 	process.env.AUTH_PROXY_TARGET ?? "https://superset-api-beryl.vercel.app";
@@ -18,23 +21,27 @@ async function proxy(
 	path: string[],
 ): Promise<NextResponse> {
 	const url = new URL(request.url);
-	const destination = `${API_BASE}/api/auth/${path.join("/")}${url.search}`;
+	const pathStr = path.join("/");
+	const destination = `${API_BASE}/api/auth/${pathStr}${url.search}`;
 
 	const reqHeaders = new Headers(request.headers);
 	reqHeaders.delete("host");
-	// Tell the API the real origin so trusted-origins check passes
-	reqHeaders.set("x-forwarded-host", new URL(request.url).host);
 
 	const body =
 		request.method !== "GET" && request.method !== "HEAD"
 			? await request.arrayBuffer()
 			: null;
 
+	// OAuth callbacks: pass 302/307 through to the browser so it follows
+	// the redirect to the callbackURL (web app). Everything else: follow
+	// redirects on the server so 307 cookie-refresh responses are resolved
+	// before the browser sees them (prevents redirect to API domain).
+	const isCallback = pathStr.startsWith("callback/");
 	const upstream = await fetch(destination, {
 		method: request.method,
 		headers: reqHeaders,
 		body,
-		redirect: "manual", // Pass redirects straight to the browser
+		redirect: isCallback ? "manual" : "follow",
 	});
 
 	// Build response headers, handling Set-Cookie individually so they
