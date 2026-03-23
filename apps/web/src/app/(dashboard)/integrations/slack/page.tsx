@@ -15,7 +15,9 @@ import { ErrorHandler } from "./components/ErrorHandler";
 
 export default async function SlackIntegrationPage() {
 	const trpc = await api();
-	const organization = await trpc.user.myOrganization.query();
+	const organization = await trpc.user.myOrganization
+		.query()
+		.catch(() => null);
 
 	if (!organization) {
 		return (
@@ -27,9 +29,9 @@ export default async function SlackIntegrationPage() {
 		);
 	}
 
-	const connection = await trpc.integration.slack.getConnection.query({
-		organizationId: organization.id,
-	});
+	const connection = await trpc.integration.slack.getConnection
+		.query({ organizationId: organization.id })
+		.catch(() => null);
 	const isConnected = !!connection;
 
 	return (

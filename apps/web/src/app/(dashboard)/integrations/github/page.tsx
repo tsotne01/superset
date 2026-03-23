@@ -16,7 +16,9 @@ import { RepositoryList } from "./components/RepositoryList";
 
 export default async function GitHubIntegrationPage() {
 	const trpc = await api();
-	const organization = await trpc.user.myOrganization.query();
+	const organization = await trpc.user.myOrganization
+		.query()
+		.catch(() => null);
 
 	if (!organization) {
 		return (
@@ -28,9 +30,9 @@ export default async function GitHubIntegrationPage() {
 		);
 	}
 
-	const installation = await trpc.integration.github.getInstallation.query({
-		organizationId: organization.id,
-	});
+	const installation = await trpc.integration.github.getInstallation
+		.query({ organizationId: organization.id })
+		.catch(() => null);
 	const isConnected = !!installation;
 
 	return (

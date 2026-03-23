@@ -16,7 +16,9 @@ import { TeamSelector } from "./components/TeamSelector";
 
 export default async function LinearIntegrationPage() {
 	const trpc = await api();
-	const organization = await trpc.user.myOrganization.query();
+	const organization = await trpc.user.myOrganization
+		.query()
+		.catch(() => null);
 
 	if (!organization) {
 		return (
@@ -28,9 +30,9 @@ export default async function LinearIntegrationPage() {
 		);
 	}
 
-	const connection = await trpc.integration.linear.getConnection.query({
-		organizationId: organization.id,
-	});
+	const connection = await trpc.integration.linear.getConnection
+		.query({ organizationId: organization.id })
+		.catch(() => null);
 	const isConnected = !!connection;
 
 	return (
