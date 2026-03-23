@@ -46,8 +46,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
 	extra: {
 		router: {},
 		eas: {
-			projectId: "fa9332a8-896a-4d2a-be5b-d82469b46e5d",
+			projectId: "f04c26d7-1117-441a-b125-103cd704cbc6",
 		},
 	},
-	owner: "supserset-sh",
+	owner: "tsotne_01",
 });

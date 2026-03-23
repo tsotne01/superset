@@ -6,13 +6,34 @@
 	"build": {
 		"development": {
 			"developmentClient": true,
-			"distribution": "internal"
+			"distribution": "internal",
+			"env": {
+				"EXPO_PUBLIC_API_URL": "https://superset-api-beryl.vercel.app",
+				"EXPO_PUBLIC_WEB_URL": "https://superset-web-umber.vercel.app",
+				"EXPO_PUBLIC_DEEP_LINK_SCHEME": "superset",
+				"EXPO_PUBLIC_POSTHOG_KEY": "placeholder",
+				"EXPO_PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com"
+			}
 		},
 		"preview": {
-			"distribution": "internal"
+			"distribution": "internal",
+			"env": {
+				"EXPO_PUBLIC_API_URL": "https://superset-api-beryl.vercel.app",
+				"EXPO_PUBLIC_WEB_URL": "https://superset-web-umber.vercel.app",
+				"EXPO_PUBLIC_DEEP_LINK_SCHEME": "superset",
+				"EXPO_PUBLIC_POSTHOG_KEY": "placeholder",
+				"EXPO_PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com"
+			}
 		},
 		"production": {
-			"autoIncrement": true
+			"autoIncrement": true,
+			"env": {
+				"EXPO_PUBLIC_API_URL": "https://superset-api-beryl.vercel.app",
+				"EXPO_PUBLIC_WEB_URL": "https://superset-web-umber.vercel.app",
+				"EXPO_PUBLIC_DEEP_LINK_SCHEME": "superset",
+				"EXPO_PUBLIC_POSTHOG_KEY": "placeholder",
+				"EXPO_PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com"
+			}
 		}
 	},
 	"submit": {

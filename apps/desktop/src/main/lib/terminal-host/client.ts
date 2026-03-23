@@ -72,7 +72,11 @@ const DEBUG_CLIENT = process.env.SUPERSET_TERMINAL_DEBUG === "1";
 // Get from shared constants for multi-worktree support (imported at top of file)
 const SUPERSET_HOME_DIR = join(homedir(), SUPERSET_DIR_NAME);
 
-const SOCKET_PATH = join(SUPERSET_HOME_DIR, "terminal-host.sock");
+// On Windows, Unix domain sockets are not reliably supported; use named pipes instead.
+const IS_WINDOWS = process.platform === "win32";
+const SOCKET_PATH = IS_WINDOWS
+	? "\\\\.\\pipe\\superset-terminal-host"
+	: join(SUPERSET_HOME_DIR, "terminal-host.sock");
 const TOKEN_PATH = join(SUPERSET_HOME_DIR, "terminal-host.token");
 const PID_PATH = join(SUPERSET_HOME_DIR, "terminal-host.pid");
 const SPAWN_LOCK_PATH = join(SUPERSET_HOME_DIR, "terminal-host.spawn.lock");
@@ -80,7 +84,7 @@ const SCRIPT_MTIME_PATH = join(SUPERSET_HOME_DIR, "terminal-host.mtime");
 
 // Connection timeouts
 const CONNECT_TIMEOUT_MS = 5000;
-const SPAWN_WAIT_MS = 2000;
+const SPAWN_WAIT_MS = 10000; // Increased for Windows named pipe startup
 const REQUEST_TIMEOUT_MS = 30000;
 const SPAWN_LOCK_TIMEOUT_MS = 10000; // Max time to hold spawn lock
 
@@ -993,7 +997,8 @@ export class TerminalHostClient extends EventEmitter {
 		const timeoutMs = 2000;
 
 		while (Date.now() - startTime < timeoutMs) {
-			if (!existsSync(SOCKET_PATH)) return;
+			// On Windows, named pipes don't create regular files; always try connect.
+			if (!IS_WINDOWS && !existsSync(SOCKET_PATH)) return;
 			const live = await this.isSocketLive();
 			if (!live) return;
 			await this.sleep(100);
@@ -1010,7 +1015,9 @@ export class TerminalHostClient extends EventEmitter {
 	 */
 	private isSocketLive(): Promise<boolean> {
 		return new Promise((resolve) => {
-			if (!existsSync(SOCKET_PATH)) {
+			// On Windows with named pipes, skip the file-existence check and try
+			// connecting directly — named pipes don't appear as regular files.
+			if (!IS_WINDOWS && !existsSync(SOCKET_PATH)) {
 				resolve(false);
 				return;
 			}
@@ -1090,9 +1097,10 @@ export class TerminalHostClient extends EventEmitter {
 	 * Spawn the daemon process if not running
 	 */
 	private async spawnDaemon(): Promise<void> {
-		// Check if socket is live first - this is the authoritative check
-		// PID file can be stale if daemon crashed and PID was reused by another process
-		if (existsSync(SOCKET_PATH)) {
+		// Check if socket/pipe is live first — this is the authoritative check.
+		// On Windows, named pipes don't appear as regular files, so we always try
+		// to connect rather than gating on existsSync.
+		if (IS_WINDOWS || existsSync(SOCKET_PATH)) {
 			const isLive = await this.isSocketLive();
 			if (isLive) {
 				if (DEBUG_CLIENT) {
@@ -1101,14 +1109,16 @@ export class TerminalHostClient extends EventEmitter {
 				return;
 			}
 
-			// Socket exists but not responsive - safe to remove
-			if (DEBUG_CLIENT) {
-				console.log("[TerminalHostClient] Removing stale socket file");
-			}
-			try {
-				unlinkSync(SOCKET_PATH);
-			} catch {
-				// Ignore - might not have permission
+			// Socket exists but not responsive — safe to remove (Unix only).
+			if (!IS_WINDOWS) {
+				if (DEBUG_CLIENT) {
+					console.log("[TerminalHostClient] Removing stale socket file");
+				}
+				try {
+					unlinkSync(SOCKET_PATH);
+				} catch {
+					// Ignore - might not have permission
+				}
 			}
 		}
 
@@ -1260,7 +1270,11 @@ export class TerminalHostClient extends EventEmitter {
 		const startTime = Date.now();
 
 		while (Date.now() - startTime < SPAWN_WAIT_MS) {
-			if (existsSync(SOCKET_PATH)) {
+			if (IS_WINDOWS) {
+				// Named pipes don't create regular files; try to connect directly.
+				const alive = await this.isSocketLive();
+				if (alive) return;
+			} else if (existsSync(SOCKET_PATH)) {
 				// Give it a moment to start listening
 				await this.sleep(200);
 				return;
