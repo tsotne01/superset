@@ -112,6 +112,29 @@ export function IntegrationsSettings({
 		window.open(`${env.NEXT_PUBLIC_WEB_URL}${path}`, "_blank");
 	};
 
+	/**
+	 * Open the Linear OAuth flow using a pre-authenticated URL so the browser
+	 * doesn't need to sign in again (avoids cross-domain session issues).
+	 */
+	const handleConnectLinear = async () => {
+		if (!activeOrganizationId) return;
+		const token = session?.session?.token;
+		if (!token) return;
+		try {
+			const res = await fetch(
+				`${env.NEXT_PUBLIC_API_URL}/api/integrations/linear/start?organizationId=${activeOrganizationId}`,
+				{ headers: { Authorization: `Bearer ${token}` } },
+			);
+			if (!res.ok) throw new Error("Failed to get connect URL");
+			const { url } = (await res.json()) as { url: string };
+			window.open(url, "_blank");
+		} catch (err) {
+			console.error("[linear] Failed to get pre-auth connect URL:", err);
+			// Fallback to web app (may require browser sign-in)
+			handleOpenWeb("/integrations/linear");
+		}
+	};
+
 	if (!activeOrganizationId) {
 		return (
 			<div className="p-6 max-w-4xl w-full">
@@ -147,7 +170,7 @@ export function IntegrationsSettings({
 						connectedOrgName={linearConnection?.externalOrgName}
 						onManage={() =>
 							gateFeature(GATED_FEATURES.INTEGRATIONS, () =>
-								handleOpenWeb("/integrations/linear"),
+								handleConnectLinear(),
 							)
 						}
 					/>
