@@ -9,7 +9,18 @@ import SuperJSON from "superjson";
 import { env } from "../env";
 
 export const api = cache(async () => {
-	const heads = new Headers(await headers());
+	const incoming = await headers();
+	const heads = new Headers();
+
+	// Forward only the headers the API actually needs.
+	// Crucially, do NOT forward `host` — that tells Vercel's edge which
+	// project to serve, and forwarding the web app's host would route the
+	// request back to the web project instead of the API.
+	const forwardHeaders = ["cookie", "authorization", "accept-language"];
+	for (const name of forwardHeaders) {
+		const value = incoming.get(name);
+		if (value) heads.set(name, value);
+	}
 	heads.set("x-trpc-source", "rsc");
 
 	return createTRPCClient<AppRouter>({

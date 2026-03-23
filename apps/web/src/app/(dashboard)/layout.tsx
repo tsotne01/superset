@@ -21,7 +21,9 @@ export default async function DashboardLayout({
 	}
 
 	const trpc = await api();
-	const organization = await trpc.user.myOrganization.query();
+	const organization = await trpc.user.myOrganization
+		.query()
+		.catch(() => null);
 	const displayName = organization?.name ?? "Superset";
 
 	return (
