@@ -13,6 +13,7 @@ export const env = createEnv({
 		GOOGLE_CLIENT_SECRET: z.string(),
 		BETTER_AUTH_SECRET: z.string(),
 		RESEND_API_KEY: z.string(),
+		RESEND_FROM_EMAIL: z.string().email().default("onboarding@resend.dev"),
 		KV_REST_API_URL: z.string(),
 		KV_REST_API_TOKEN: z.string(),
 		STRIPE_SECRET_KEY: z.string(),

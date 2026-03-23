@@ -54,7 +54,7 @@ const desktopDevOrigins =
 		: [];
 
 export const auth = betterAuth({
-	baseURL: env.NEXT_PUBLIC_API_URL,
+	baseURL: process.env.BETTER_AUTH_URL ?? env.NEXT_PUBLIC_API_URL,
 	secret: env.BETTER_AUTH_SECRET,
 	disabledPaths: [],
 	database: drizzleAdapter(db, {

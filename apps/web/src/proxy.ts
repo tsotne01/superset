@@ -6,7 +6,7 @@ const publicRoutes = [
 	"/sign-in",
 	"/sign-up",
 	"/auth/desktop",
-	"/api/auth/desktop",
+	"/api/auth", // All Better Auth routes must be public — they handle their own auth
 	"/accept-invitation",
 ];
 
