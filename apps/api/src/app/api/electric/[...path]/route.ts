@@ -47,6 +47,9 @@ export async function GET(request: Request): Promise<Response> {
 
 	const originUrl = new URL(env.ELECTRIC_URL);
 	originUrl.searchParams.set("secret", env.ELECTRIC_SECRET);
+	if (env.ELECTRIC_SOURCE_ID) {
+		originUrl.searchParams.set("source_id", env.ELECTRIC_SOURCE_ID);
+	}
 
 	url.searchParams.forEach((value, key) => {
 		if (ELECTRIC_PROTOCOL_QUERY_PARAMS.includes(key)) {
