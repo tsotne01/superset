@@ -18,10 +18,15 @@ export async function GET(request: Request) {
 		return new Response("Invalid provider", { status: 400 });
 	}
 
-	const successUrl = new URL(`${env.NEXT_PUBLIC_WEB_URL}/auth/desktop/success`);
-	successUrl.searchParams.set("desktop_state", state);
+	// Use the API's finalize endpoint as the OAuth callbackURL so the session
+	// cookie is still on the API domain when we create the desktop token.
+	// The finalize endpoint then redirects to the web app with the token in the URL.
+	const finalizeUrl = new URL(
+		`${env.NEXT_PUBLIC_API_URL}/api/auth/desktop/finalize`,
+	);
+	finalizeUrl.searchParams.set("state", state);
 	if (protocol) {
-		successUrl.searchParams.set("desktop_protocol", protocol);
+		finalizeUrl.searchParams.set("protocol", protocol);
 	}
 	if (localCallback) {
 		try {
@@ -31,10 +36,7 @@ export async function GET(request: Request) {
 				(callbackUrl.hostname === "127.0.0.1" ||
 					callbackUrl.hostname === "localhost");
 			if (isLoopback && callbackUrl.pathname === "/auth/callback") {
-				successUrl.searchParams.set(
-					"desktop_local_callback",
-					callbackUrl.toString(),
-				);
+				finalizeUrl.searchParams.set("local_callback", callbackUrl.toString());
 			}
 		} catch {
 			// Ignore invalid callback URLs and continue with deep-link flow.
@@ -44,7 +46,7 @@ export async function GET(request: Request) {
 	const result = await auth.api.signInSocial({
 		body: {
 			provider,
-			callbackURL: successUrl.toString(),
+			callbackURL: finalizeUrl.toString(),
 		},
 		asResponse: true,
 	});
