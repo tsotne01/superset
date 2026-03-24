@@ -11,7 +11,6 @@ import {
 	DialogTitle,
 } from "@superset/ui/dialog";
 import { Kbd, KbdGroup } from "@superset/ui/kbd";
-import { ScrollArea } from "@superset/ui/scroll-area";
 import { toast } from "@superset/ui/sonner";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useNavigate } from "@tanstack/react-router";
@@ -213,7 +212,7 @@ export function CreateTaskDialog({
 						className="w-full bg-transparent text-3xl font-semibold tracking-tight outline-none placeholder:text-muted-foreground/60"
 					/>
 
-					<ScrollArea className="mt-5 flex-1 min-h-0">
+					<div className="mt-5 flex-1 min-h-0 overflow-y-auto">
 						<TaskMarkdownRenderer
 							content={description}
 							onChange={setDescription}
@@ -221,7 +220,7 @@ export function CreateTaskDialog({
 							editorClassName="min-h-[240px] text-base leading-relaxed"
 							onModEnter={handleCreate}
 						/>
-					</ScrollArea>
+					</div>
 
 					<div className="mt-4 flex flex-wrap items-center gap-2">
 						<CreateTaskStatusPicker
