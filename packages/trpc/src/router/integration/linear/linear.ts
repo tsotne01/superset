@@ -2,12 +2,14 @@ import { db, dbWs } from "@superset/db/client";
 import {
 	integrationConnections,
 	type LinearConfig,
+	taskComments,
+	taskRelations,
 	taskStatuses,
 	tasks,
 } from "@superset/db/schema";
 import { seedDefaultStatuses } from "@superset/db/seed-default-statuses";
 import type { TRPCRouterRecord } from "@trpc/server";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure } from "../../../trpc";
 import { verifyOrgAdmin, verifyOrgMembership } from "../utils";
@@ -154,5 +156,36 @@ export const linearRouter = {
 				);
 
 			return { success: true };
+		}),
+	getComments: protectedProcedure
+		.input(
+			z.object({
+				taskId: z.string().uuid(),
+				organizationId: z.string().uuid(),
+			}),
+		)
+		.query(async ({ ctx, input }) => {
+			await verifyOrgMembership(ctx.session.user.id, input.organizationId);
+			return db.query.taskComments.findMany({
+				where: and(
+					eq(taskComments.taskId, input.taskId),
+					isNull(taskComments.deletedAt),
+				),
+				orderBy: asc(taskComments.createdAt),
+			});
+		}),
+
+	getRelations: protectedProcedure
+		.input(
+			z.object({
+				taskId: z.string().uuid(),
+				organizationId: z.string().uuid(),
+			}),
+		)
+		.query(async ({ ctx, input }) => {
+			await verifyOrgMembership(ctx.session.user.id, input.organizationId);
+			return db.query.taskRelations.findMany({
+				where: eq(taskRelations.taskId, input.taskId),
+			});
 		}),
 } satisfies TRPCRouterRecord;

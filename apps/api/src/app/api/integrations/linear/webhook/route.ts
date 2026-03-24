@@ -1,4 +1,7 @@
-import type { EntityWebhookPayloadWithIssueData } from "@linear/sdk/webhooks";
+import type {
+	EntityWebhookPayloadWithCommentData,
+	EntityWebhookPayloadWithIssueData,
+} from "@linear/sdk/webhooks";
 import {
 	LINEAR_WEBHOOK_SIGNATURE_HEADER,
 	LinearWebhookClient,
@@ -8,6 +11,8 @@ import type { SelectIntegrationConnection } from "@superset/db/schema";
 import {
 	integrationConnections,
 	members,
+	taskComments,
+	taskRelations,
 	taskStatuses,
 	tasks,
 	users,
@@ -18,6 +23,24 @@ import { and, eq, sql } from "drizzle-orm";
 import { env } from "@/env";
 
 const webhookClient = new LinearWebhookClient(env.LINEAR_WEBHOOK_SECRET);
+
+// IssueRelation is not typed in the SDK's LinearWebhookEventTypeMap,
+// so we define its data shape locally.
+interface IssueRelationWebhookData {
+	id: string;
+	type: string;
+	issueId: string;
+	relatedIssueId: string;
+	createdAt: string;
+}
+
+interface IssueRelationWebhookPayload {
+	type: "IssueRelation";
+	action: string;
+	organizationId: string;
+	webhookTimestamp: number;
+	data: IssueRelationWebhookData;
+}
 
 export async function POST(request: Request) {
 	const body = await request.text();
@@ -90,6 +113,16 @@ export async function POST(request: Request) {
 		if (payload.type === "Issue") {
 			status = await processIssueEvent(
 				payload as EntityWebhookPayloadWithIssueData,
+				connection,
+			);
+		} else if (payload.type === "Comment") {
+			status = await processCommentEvent(
+				payload as EntityWebhookPayloadWithCommentData,
+				connection,
+			);
+		} else if (payload.type === "IssueRelation") {
+			status = await processRelationEvent(
+				payload as unknown as IssueRelationWebhookPayload,
 				connection,
 			);
 		}
@@ -189,9 +222,13 @@ async function processIssueEvent(
 			externalKey: issue.identifier,
 			externalUrl: issue.url,
 			lastSyncedAt: new Date(),
+			parentExternalId: issue.parentId ?? null,
+			cycleId: issue.cycle?.id ?? null,
+			cycleName: issue.cycle?.name ?? null,
+			cycleNumber: issue.cycle?.number ?? null,
 		};
 
-		await db
+		const [upsertedTask] = await db
 			.insert(tasks)
 			.values({
 				...taskData,
@@ -206,7 +243,26 @@ async function processIssueEvent(
 					tasks.externalId,
 				],
 				set: { ...taskData, syncError: null },
+			})
+			.returning({ id: tasks.id, parentExternalId: tasks.parentExternalId });
+
+		// Attempt to resolve parentId if parentExternalId is set
+		if (upsertedTask?.parentExternalId) {
+			const parentTask = await db.query.tasks.findFirst({
+				where: and(
+					eq(tasks.organizationId, connection.organizationId),
+					eq(tasks.externalProvider, "linear"),
+					eq(tasks.externalId, upsertedTask.parentExternalId),
+				),
+				columns: { id: true },
 			});
+			if (parentTask) {
+				await db
+					.update(tasks)
+					.set({ parentId: parentTask.id })
+					.where(eq(tasks.id, upsertedTask.id));
+			}
+		}
 	} else if (payload.action === "remove") {
 		await db
 			.update(tasks)
@@ -215,6 +271,161 @@ async function processIssueEvent(
 				and(
 					eq(tasks.externalProvider, "linear"),
 					eq(tasks.externalId, issue.id),
+				),
+			);
+	}
+
+	return "processed";
+}
+
+async function processCommentEvent(
+	payload: EntityWebhookPayloadWithCommentData,
+	connection: SelectIntegrationConnection,
+): Promise<"processed" | "skipped"> {
+	const comment = payload.data;
+
+	if (payload.action === "create" || payload.action === "update") {
+		// Comments without an issueId (e.g. project update comments) are not relevant
+		if (!comment.issueId) {
+			return "skipped";
+		}
+
+		const task = await db.query.tasks.findFirst({
+			where: and(
+				eq(tasks.organizationId, connection.organizationId),
+				eq(tasks.externalProvider, "linear"),
+				eq(tasks.externalId, comment.issueId),
+			),
+			columns: { id: true },
+		});
+
+		if (!task) {
+			console.warn(
+				`[webhook] Task not found for issue ${comment.issueId}, skipping comment`,
+			);
+			return "skipped";
+		}
+
+		const user = comment.user as
+			| { id: string; name: string; avatarUrl?: string | null }
+			| null
+			| undefined;
+
+		await db
+			.insert(taskComments)
+			.values({
+				taskId: task.id,
+				organizationId: connection.organizationId,
+				externalId: comment.id,
+				externalProvider: "linear",
+				body: comment.body,
+				authorExternalId: user?.id ?? null,
+				authorName: user?.name ?? null,
+				authorAvatarUrl: user?.avatarUrl ?? null,
+				createdAt: new Date(comment.createdAt),
+				updatedAt: new Date(comment.updatedAt),
+				editedAt: comment.editedAt ? new Date(comment.editedAt) : null,
+			})
+			.onConflictDoUpdate({
+				target: [
+					taskComments.organizationId,
+					taskComments.externalProvider,
+					taskComments.externalId,
+				],
+				set: {
+					body: sql`excluded.body`,
+					authorExternalId: sql`excluded.author_external_id`,
+					authorName: sql`excluded.author_name`,
+					authorAvatarUrl: sql`excluded.author_avatar_url`,
+					updatedAt: sql`excluded.updated_at`,
+					editedAt: sql`excluded.edited_at`,
+					deletedAt: null,
+				},
+			});
+	} else if (payload.action === "remove") {
+		await db
+			.update(taskComments)
+			.set({ deletedAt: new Date() })
+			.where(
+				and(
+					eq(taskComments.organizationId, connection.organizationId),
+					eq(taskComments.externalProvider, "linear"),
+					eq(taskComments.externalId, comment.id),
+				),
+			);
+	}
+
+	return "processed";
+}
+
+async function processRelationEvent(
+	payload: IssueRelationWebhookPayload,
+	connection: SelectIntegrationConnection,
+): Promise<"processed" | "skipped"> {
+	const relation = payload.data;
+
+	if (payload.action === "create") {
+		const [sourceTask, relatedTask] = await Promise.all([
+			db.query.tasks.findFirst({
+				where: and(
+					eq(tasks.organizationId, connection.organizationId),
+					eq(tasks.externalProvider, "linear"),
+					eq(tasks.externalId, relation.issueId),
+				),
+				columns: { id: true },
+			}),
+			db.query.tasks.findFirst({
+				where: and(
+					eq(tasks.organizationId, connection.organizationId),
+					eq(tasks.externalProvider, "linear"),
+					eq(tasks.externalId, relation.relatedIssueId),
+				),
+				columns: { id: true },
+			}),
+		]);
+
+		if (!sourceTask) {
+			console.warn(
+				`[webhook] Source task not found for issue ${relation.issueId}, skipping relation`,
+			);
+			return "skipped";
+		}
+
+		const relatedTaskId = relatedTask?.id ?? null;
+
+		await db
+			.insert(taskRelations)
+			.values({
+				organizationId: connection.organizationId,
+				taskId: sourceTask.id,
+				relatedTaskId,
+				relatedExternalId: relatedTaskId ? null : relation.relatedIssueId,
+				type: relation.type,
+				externalId: relation.id,
+				externalProvider: "linear",
+				createdAt: new Date(relation.createdAt),
+			})
+			.onConflictDoUpdate({
+				target: [
+					taskRelations.organizationId,
+					taskRelations.externalProvider,
+					taskRelations.externalId,
+				],
+				set: {
+					taskId: sql`excluded.task_id`,
+					relatedTaskId: sql`excluded.related_task_id`,
+					relatedExternalId: sql`excluded.related_external_id`,
+					type: sql`excluded.type`,
+				},
+			});
+	} else if (payload.action === "remove") {
+		await db
+			.delete(taskRelations)
+			.where(
+				and(
+					eq(taskRelations.organizationId, connection.organizationId),
+					eq(taskRelations.externalProvider, "linear"),
+					eq(taskRelations.externalId, relation.id),
 				),
 			);
 	}

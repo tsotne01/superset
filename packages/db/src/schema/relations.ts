@@ -23,6 +23,8 @@ import {
 	secrets,
 	sessionHosts,
 	subscriptions,
+	taskComments,
+	taskRelations,
 	taskStatuses,
 	tasks,
 	usersSlackUsers,
@@ -80,6 +82,8 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
 	workspaces: many(workspaces),
 	tasks: many(tasks),
 	taskStatuses: many(taskStatuses),
+	taskComments: many(taskComments),
+	taskRelations: many(taskRelations),
 	integrations: many(integrationConnections),
 	githubInstallations: many(githubInstallations),
 	githubRepositories: many(githubRepositories),
@@ -118,7 +122,7 @@ export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
 	}),
 }));
 
-export const tasksRelations = relations(tasks, ({ one }) => ({
+export const tasksRelations = relations(tasks, ({ one, many }) => ({
 	organization: one(organizations, {
 		fields: [tasks.organizationId],
 		references: [organizations.id],
@@ -136,6 +140,17 @@ export const tasksRelations = relations(tasks, ({ one }) => ({
 		fields: [tasks.creatorId],
 		references: [users.id],
 		relationName: "creator",
+	}),
+	parent: one(tasks, {
+		fields: [tasks.parentId],
+		references: [tasks.id],
+		relationName: "parentTask",
+	}),
+	children: many(tasks, { relationName: "parentTask" }),
+	comments: many(taskComments),
+	relations: many(taskRelations, { relationName: "taskRelations" }),
+	relatedByRelations: many(taskRelations, {
+		relationName: "relatedTaskRelations",
 	}),
 }));
 
@@ -412,6 +427,34 @@ export const sessionHostsRelations = relations(sessionHosts, ({ one }) => ({
 	}),
 	organization: one(organizations, {
 		fields: [sessionHosts.organizationId],
+		references: [organizations.id],
+	}),
+}));
+
+export const taskCommentsRelations = relations(taskComments, ({ one }) => ({
+	task: one(tasks, {
+		fields: [taskComments.taskId],
+		references: [tasks.id],
+	}),
+	organization: one(organizations, {
+		fields: [taskComments.organizationId],
+		references: [organizations.id],
+	}),
+}));
+
+export const taskRelationsRelations = relations(taskRelations, ({ one }) => ({
+	task: one(tasks, {
+		fields: [taskRelations.taskId],
+		references: [tasks.id],
+		relationName: "taskRelations",
+	}),
+	relatedTask: one(tasks, {
+		fields: [taskRelations.relatedTaskId],
+		references: [tasks.id],
+		relationName: "relatedTaskRelations",
+	}),
+	organization: one(organizations, {
+		fields: [taskRelations.organizationId],
 		references: [organizations.id],
 	}),
 }));
