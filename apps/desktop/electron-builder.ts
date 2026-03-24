@@ -83,15 +83,9 @@ const config: Configuration = {
 		"!**/.DS_Store",
 	],
 
-	// Rebuild native modules for Electron's Node.js version.
-	// Set SKIP_NATIVE_REBUILD=1 to skip (e.g. on Windows without VS Build Tools installed).
-	npmRebuild: process.env.SKIP_NATIVE_REBUILD !== "1",
-
-	// @parcel/watcher loads from @parcel/watcher-<platform> (N-API, ABI-stable) so it
-	// does not need to be recompiled for Electron — skip it to avoid needing VS Build Tools.
-	rebuildConfig: {
-		ignoreModules: ["@parcel/watcher"],
-	},
+	// Native module rebuild is handled by the install:deps script (electron-rebuild
+	// with @parcel/watcher excluded). Disable here to avoid a redundant second pass.
+	npmRebuild: false,
 
 	// macOS
 	mac: {
