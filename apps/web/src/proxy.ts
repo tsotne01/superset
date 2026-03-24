@@ -7,6 +7,7 @@ const publicRoutes = [
 	"/sign-up",
 	"/auth/desktop",
 	"/api/auth", // All Better Auth routes must be public — they handle their own auth
+	"/api/trpc", // tRPC proxy — the API router handles its own auth
 	"/accept-invitation",
 ];
 

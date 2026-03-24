@@ -43,12 +43,12 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
 				}),
 				httpBatchStreamLink({
 					transformer: SuperJSON,
-					url: `${env.NEXT_PUBLIC_API_URL}/api/trpc`,
+					// Relative URL: browser sends to the web domain where the session
+					// cookie lives. next.config.ts rewrites /api/trpc/* → API
+					// server-side, forwarding the cookie header automatically.
+					url: "/api/trpc",
 					headers() {
 						return { "x-trpc-source": "nextjs-react" };
-					},
-					fetch(url, options) {
-						return fetch(url, { ...options, credentials: "include" });
 					},
 				}),
 			],
