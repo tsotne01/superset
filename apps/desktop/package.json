@@ -26,7 +26,7 @@
 		"build": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --publish never",
 		"prepackage": "bun run copy:native-modules && bun run validate:native-runtime",
 		"package": "electron-builder --config electron-builder.ts",
-		"install:deps": "electron-rebuild --ignore @parcel/watcher",
+		"install:deps": "bun run scripts/rebuild-native.ts",
 		"release": "electron-builder --publish always",
 		"clean:dev": "rimraf ./node_modules/.dev",
 		"generate:routes": "tsr generate",
