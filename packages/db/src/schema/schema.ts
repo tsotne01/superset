@@ -1,3 +1,4 @@
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
 	boolean,
 	index,
@@ -127,6 +128,17 @@ export const tasks = pgTable(
 		assigneeDisplayName: text("assignee_display_name"),
 		assigneeAvatarUrl: text("assignee_avatar_url"),
 
+		// Sub-issues
+		parentId: uuid("parent_id").references((): AnyPgColumn => tasks.id, {
+			onDelete: "set null",
+		}),
+		parentExternalId: text("parent_external_id"), // Linear parent issue ID, used for post-sync linking
+
+		// Cycle fields
+		cycleId: text("cycle_id"),
+		cycleName: text("cycle_name"),
+		cycleNumber: integer("cycle_number"),
+
 		startedAt: timestamp("started_at"),
 		completedAt: timestamp("completed_at"),
 		deletedAt: timestamp("deleted_at"),
@@ -158,6 +170,74 @@ export const tasks = pgTable(
 
 export type InsertTask = typeof tasks.$inferInsert;
 export type SelectTask = typeof tasks.$inferSelect;
+
+export const taskComments = pgTable(
+	"task_comments",
+	{
+		id: uuid().primaryKey().defaultRandom(),
+		taskId: uuid("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		organizationId: uuid("organization_id")
+			.notNull()
+			.references(() => organizations.id, { onDelete: "cascade" }),
+		externalId: text("external_id").notNull(),
+		externalProvider: text("external_provider").notNull(), // "linear"
+		body: text().notNull(),
+		authorExternalId: text("author_external_id"),
+		authorName: text("author_name"),
+		authorAvatarUrl: text("author_avatar_url"),
+		createdAt: timestamp("created_at").notNull(),
+		updatedAt: timestamp("updated_at").notNull(),
+		editedAt: timestamp("edited_at"),
+		deletedAt: timestamp("deleted_at"),
+	},
+	(table) => [
+		index("task_comments_task_id_idx").on(table.taskId),
+		index("task_comments_organization_id_idx").on(table.organizationId),
+		unique("task_comments_org_provider_external_unique").on(
+			table.organizationId,
+			table.externalProvider,
+			table.externalId,
+		),
+	],
+);
+
+export type InsertTaskComment = typeof taskComments.$inferInsert;
+export type SelectTaskComment = typeof taskComments.$inferSelect;
+
+export const taskRelations = pgTable(
+	"task_relations",
+	{
+		id: uuid().primaryKey().defaultRandom(),
+		organizationId: uuid("organization_id")
+			.notNull()
+			.references(() => organizations.id, { onDelete: "cascade" }),
+		taskId: uuid("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		relatedTaskId: uuid("related_task_id").references(() => tasks.id, {
+			onDelete: "cascade",
+		}),
+		relatedExternalId: text("related_external_id"), // fallback if related task not yet in DB
+		type: text().notNull(), // "blocks" | "blocked_by" | "relates_to" | "duplicate"
+		externalId: text("external_id").notNull(),
+		externalProvider: text("external_provider").notNull(), // "linear"
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(table) => [
+		index("task_relations_task_id_idx").on(table.taskId),
+		index("task_relations_organization_id_idx").on(table.organizationId),
+		unique("task_relations_org_provider_external_unique").on(
+			table.organizationId,
+			table.externalProvider,
+			table.externalId,
+		),
+	],
+);
+
+export type InsertTaskRelation = typeof taskRelations.$inferInsert;
+export type SelectTaskRelation = typeof taskRelations.$inferSelect;
 
 // Integration connections for external providers (Linear, GitHub, etc.)
 export const integrationConnections = pgTable(

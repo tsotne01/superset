@@ -3,6 +3,7 @@ import { buildConflictUpdateColumns, db } from "@superset/db";
 import {
 	integrationConnections,
 	members,
+	taskRelations,
 	taskStatuses,
 	tasks,
 	users,
@@ -12,6 +13,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import chunk from "lodash.chunk";
 import { z } from "zod";
 import { env } from "@/env";
+import { syncComments } from "./syncComments";
 import { syncWorkflowStates } from "./syncWorkflowStates";
 import { fetchAllIssues, mapIssueToTask } from "./utils";
 
@@ -210,9 +212,128 @@ async function performInitialSync(
 						"externalKey",
 						"externalUrl",
 						"lastSyncedAt",
+						"parentExternalId",
+						"cycleId",
+						"cycleName",
+						"cycleNumber",
 					]),
 					syncError: null,
 				},
 			});
+	}
+
+	// Second pass: resolve parentId from parentExternalId
+	const issuesWithParent = issues.filter((i) => i.parent?.id);
+	if (issuesWithParent.length > 0) {
+		const parentExternalIds = [
+			...new Set(issuesWithParent.map((i) => i.parent?.id)),
+		];
+
+		const parentTasks = await db
+			.select({ id: tasks.id, externalId: tasks.externalId })
+			.from(tasks)
+			.where(
+				and(
+					eq(tasks.organizationId, organizationId),
+					eq(tasks.externalProvider, "linear"),
+					inArray(tasks.externalId, parentExternalIds),
+				),
+			);
+
+		const parentIdByExternalId = new Map(
+			parentTasks.map((t) => [t.externalId, t.id]),
+		);
+
+		for (const issue of issuesWithParent) {
+			const parentId = parentIdByExternalId.get(issue.parent?.id);
+			if (!parentId) continue;
+			await db
+				.update(tasks)
+				.set({ parentId })
+				.where(
+					and(
+						eq(tasks.organizationId, organizationId),
+						eq(tasks.externalProvider, "linear"),
+						eq(tasks.externalId, issue.id),
+					),
+				);
+		}
+	}
+
+	// Sync comments
+	await syncComments(issues, organizationId);
+
+	// Sync relations
+	const issuesWithRelations = issues.filter(
+		(i) => i.relations.nodes.length > 0,
+	);
+	if (issuesWithRelations.length > 0) {
+		const allExternalIds = [
+			...new Set([
+				...issuesWithRelations.map((i) => i.id),
+				...issuesWithRelations.flatMap((i) =>
+					i.relations.nodes.map((r) => r.relatedIssue.id),
+				),
+			]),
+		];
+
+		const relatedTasks = await db
+			.select({ id: tasks.id, externalId: tasks.externalId })
+			.from(tasks)
+			.where(
+				and(
+					eq(tasks.organizationId, organizationId),
+					eq(tasks.externalProvider, "linear"),
+					inArray(tasks.externalId, allExternalIds),
+				),
+			);
+
+		const taskIdByExternalId = new Map(
+			relatedTasks.map((t) => [t.externalId, t.id]),
+		);
+
+		const relationValues: (typeof taskRelations.$inferInsert)[] = [];
+
+		for (const issue of issuesWithRelations) {
+			const taskId = taskIdByExternalId.get(issue.id);
+			if (!taskId) continue;
+
+			for (const relation of issue.relations.nodes) {
+				const relatedTaskId =
+					taskIdByExternalId.get(relation.relatedIssue.id) ?? null;
+				relationValues.push({
+					organizationId,
+					taskId,
+					relatedTaskId,
+					relatedExternalId: relatedTaskId ? null : relation.relatedIssue.id,
+					type: relation.type,
+					externalId: relation.id,
+					externalProvider: "linear",
+					createdAt: new Date(),
+				});
+			}
+		}
+
+		if (relationValues.length > 0) {
+			const relationBatches = chunk(relationValues, BATCH_SIZE);
+			for (const batch of relationBatches) {
+				await db
+					.insert(taskRelations)
+					.values(batch)
+					.onConflictDoUpdate({
+						target: [
+							taskRelations.organizationId,
+							taskRelations.externalProvider,
+							taskRelations.externalId,
+						],
+						set: buildConflictUpdateColumns(taskRelations, [
+							"taskId",
+							"relatedTaskId",
+							"relatedExternalId",
+							"type",
+						]),
+					});
+			}
+		}
 	}
 }

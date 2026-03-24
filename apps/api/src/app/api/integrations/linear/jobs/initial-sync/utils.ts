@@ -28,6 +28,29 @@ export interface LinearIssue {
 		position: number;
 	};
 	labels: { nodes: Array<{ id: string; name: string }> };
+	parent: { id: string; identifier: string } | null;
+	cycle: { id: string; name: string; number: number } | null;
+	relations: {
+		nodes: Array<{
+			id: string;
+			type: string;
+			relatedIssue: { id: string };
+		}>;
+	};
+	comments: {
+		nodes: Array<{
+			id: string;
+			body: string;
+			createdAt: string;
+			updatedAt: string;
+			editedAt: string | null;
+			user: {
+				id: string;
+				name: string;
+				avatarUrl: string | null;
+			} | null;
+		}>;
+	};
 }
 
 interface IssuesQueryResponse {
@@ -120,6 +143,38 @@ const ISSUES_QUERY = `
             name
           }
         }
+        parent {
+          id
+          identifier
+        }
+        cycle {
+          id
+          name
+          number
+        }
+        relations {
+          nodes {
+            id
+            type
+            relatedIssue {
+              id
+            }
+          }
+        }
+        comments {
+          nodes {
+            id
+            body
+            createdAt
+            updatedAt
+            editedAt
+            user {
+              id
+              name
+              avatarUrl
+            }
+          }
+        }
       }
     }
   }
@@ -200,5 +255,9 @@ export function mapIssueToTask(
 		externalKey: issue.identifier,
 		externalUrl: issue.url,
 		lastSyncedAt: new Date(),
+		parentExternalId: issue.parent?.id ?? null,
+		cycleId: issue.cycle?.id ?? null,
+		cycleName: issue.cycle?.name ?? null,
+		cycleNumber: issue.cycle?.number ?? null,
 	};
 }
