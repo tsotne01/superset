@@ -87,6 +87,12 @@ const config: Configuration = {
 	// Set SKIP_NATIVE_REBUILD=1 to skip (e.g. on Windows without VS Build Tools installed).
 	npmRebuild: process.env.SKIP_NATIVE_REBUILD !== "1",
 
+	// @parcel/watcher loads from @parcel/watcher-<platform> (N-API, ABI-stable) so it
+	// does not need to be recompiled for Electron — skip it to avoid needing VS Build Tools.
+	rebuildConfig: {
+		ignoreModules: ["@parcel/watcher"],
+	},
+
 	// macOS
 	mac: {
 		...(existsSync(macIconPath) ? { icon: macIconPath } : {}),
