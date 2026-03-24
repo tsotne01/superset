@@ -1,5 +1,5 @@
 {
-	"setup": ["\"C:/Program Files/Git/usr/bin/bash.exe\" ./.superset/setup.sh"],
-	"teardown": ["\"C:/Program Files/Git/usr/bin/bash.exe\" ./.superset/teardown.sh"],
+	"setup": ["\"C:/Program Files/Git/bin/bash.exe\" --login -c \"./.superset/setup.sh\""],
+	"teardown": ["\"C:/Program Files/Git/bin/bash.exe\" --login -c \"./.superset/teardown.sh\""],
 	"run": ["bun dev"]
 }

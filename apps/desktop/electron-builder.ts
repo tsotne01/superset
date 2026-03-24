@@ -83,8 +83,9 @@ const config: Configuration = {
 		"!**/.DS_Store",
 	],
 
-	// Rebuild native modules for Electron's Node.js version
-	npmRebuild: true,
+	// Rebuild native modules for Electron's Node.js version.
+	// Set SKIP_NATIVE_REBUILD=1 to skip (e.g. on Windows without VS Build Tools installed).
+	npmRebuild: process.env.SKIP_NATIVE_REBUILD !== "1",
 
 	// macOS
 	mac: {
