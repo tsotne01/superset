@@ -12,7 +12,7 @@ await rebuild({
 	buildPath: process.cwd(),
 	electronVersion,
 	arch: "x64",
-	ignoreModules: ["@parcel/watcher", "node-pty", "macos-process-metrics"],
+	ignoreModules: ["@parcel/watcher", "node-pty", "@superset/macos-process-metrics"],
 	buildFromSource: false,
 	onlyModules: null,
 });
