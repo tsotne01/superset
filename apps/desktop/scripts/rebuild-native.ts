@@ -5,12 +5,13 @@ const electronVersion = (pkg.devDependencies as Record<string, string>).electron
 
 console.log(`Rebuilding native modules for Electron ${electronVersion}...`);
 console.log("Skipping @parcel/watcher (uses N-API platform package, no rebuild needed)");
+console.log("Skipping node-pty (no Electron 40 prebuilts available; requires VS Build Tools for source compilation)");
 
 await rebuild({
 	buildPath: process.cwd(),
 	electronVersion,
 	arch: "x64",
-	ignoreModules: ["@parcel/watcher"],
+	ignoreModules: ["@parcel/watcher", "node-pty"],
 	buildFromSource: false,
 	onlyModules: null,
 });

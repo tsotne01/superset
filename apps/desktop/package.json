@@ -220,6 +220,7 @@
 		"zustand": "^5.0.8"
 	},
 	"devDependencies": {
+		"@electron/rebuild": "^4.0.1",
 		"@sentry/vite-plugin": "^4.7.0",
 		"@superset/typescript": "workspace:*",
 		"@tailwindcss/vite": "^4.0.9",
@@ -240,7 +241,6 @@
 		"code-inspector-plugin": "^1.2.2",
 		"cross-env": "^10.0.0",
 		"electron": "40.2.1",
-		"@electron/rebuild": "^4.0.1",
 		"electron-builder": "^26.4.0",
 		"electron-vite": "^4.0.0",
 		"material-icon-theme": "^5.32.0",
