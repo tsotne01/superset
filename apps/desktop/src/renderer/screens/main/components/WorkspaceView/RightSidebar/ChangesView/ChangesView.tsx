@@ -829,6 +829,10 @@ export function ChangesView({
 						comments={githubComments}
 						isLoading={isGitHubStatusLoading}
 						isCommentsLoading={isGitHubCommentsLoading}
+						worktreePath={worktreePath}
+						workspaceId={workspaceId}
+						baseBranch={effectiveBaseBranch ?? defaultBranch}
+						onReviewSubmitted={handleRefresh}
 					/>
 				</TabsContent>
 			</Tabs>

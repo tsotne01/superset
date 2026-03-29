@@ -24,6 +24,7 @@ import {
 	resolveRemoteNameForExistingPRHead,
 } from "./utils/existing-pr-push-target";
 import { mergePullRequest } from "./utils/merge-pull-request";
+import { submitReview as submitReviewFn } from "./utils/submit-review";
 import {
 	buildPullRequestCompareUrl,
 	normalizeGitHubRepoUrl,
@@ -374,9 +375,9 @@ const ghRepoMetadataSchema = z.object({
 	isFork: z.boolean(),
 	parent: z
 		.object({
-			url: z.string().url(),
+			url: z.string().url().optional(),
 		})
-		.nullable(),
+		.nullish(),
 	defaultBranchRef: z.object({
 		name: z.string().min(1),
 	}),
@@ -745,5 +746,60 @@ export const createGitOperationsRouter = () => {
 					}
 				},
 			),
+
+		submitReview: publicProcedure
+			.input(
+				z.object({
+					worktreePath: z.string(),
+					event: z.enum(["approve", "request-changes", "comment"]),
+					body: z.string().optional(),
+				}),
+			)
+			.mutation(async ({ input }): Promise<{ success: boolean }> => {
+				assertRegisteredWorktree(input.worktreePath);
+				try {
+					return await submitReviewFn({
+						worktreePath: input.worktreePath,
+						event: input.event,
+						body: input.body,
+					});
+				} catch (error) {
+					const message =
+						error instanceof Error ? error.message : String(error);
+					console.error("[git/submitReview] Failed to submit review:", message);
+
+					if (isNoPullRequestFoundMessage(message)) {
+						throw new TRPCError({
+							code: "NOT_FOUND",
+							message: "No pull request found for this branch",
+						});
+					}
+					throw new TRPCError({
+						code: "INTERNAL_SERVER_ERROR",
+						message: `Failed to submit review: ${message}`,
+					});
+				}
+			}),
+
+		getPRDiff: publicProcedure
+			.input(
+				z.object({
+					worktreePath: z.string(),
+					baseBranch: z.string().default("main"),
+				}),
+			)
+			.query(async ({ input }): Promise<{ diff: string }> => {
+				assertRegisteredWorktree(input.worktreePath);
+				const git = await getGitWithShellPath(input.worktreePath);
+				try {
+					const diff = await git.diff([`origin/${input.baseBranch}...HEAD`]);
+					return { diff };
+				} catch (error) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: `Could not generate diff against origin/${input.baseBranch}. Ensure the remote branch exists and has been fetched.`,
+					});
+				}
+			}),
 	});
 };

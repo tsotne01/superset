@@ -4,10 +4,12 @@ import {
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuLabel,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@superset/ui/dropdown-menu";
 import { toast } from "@superset/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
+import { LuArrowUpRight } from "react-icons/lu";
 import {
 	VscChevronDown,
 	VscGitMerge,
@@ -161,6 +163,14 @@ export function PRButton({
 					</button>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="end" className="w-44">
+					<DropdownMenuItem
+						onClick={() => window.open(pr.url, "_blank", "noopener,noreferrer")}
+						className="text-xs"
+					>
+						<LuArrowUpRight className="size-3.5" />
+						Open in GitHub
+					</DropdownMenuItem>
+					<DropdownMenuSeparator />
 					<DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
 						Merge
 					</DropdownMenuLabel>
