@@ -24,9 +24,17 @@ async function refreshRepoContext(
 		let context: RepoContext;
 
 		if (data.isFork && data.parent) {
+			const parentUrl =
+				data.parent.url ??
+				(data.parent.owner?.login && data.parent.name
+					? `https://github.com/${data.parent.owner.login}/${data.parent.name}`
+					: null);
+			if (!parentUrl) {
+				return null;
+			}
 			context = {
 				repoUrl: data.url,
-				upstreamUrl: data.parent.url,
+				upstreamUrl: parentUrl,
 				isFork: true,
 			};
 		} else {
