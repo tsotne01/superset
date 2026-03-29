@@ -24,6 +24,7 @@ import {
 	resolveRemoteNameForExistingPRHead,
 } from "./utils/existing-pr-push-target";
 import { mergePullRequest } from "./utils/merge-pull-request";
+import { submitReview as submitReviewFn } from "./utils/submit-review";
 import {
 	buildPullRequestCompareUrl,
 	normalizeGitHubRepoUrl,
@@ -745,5 +746,38 @@ export const createGitOperationsRouter = () => {
 					}
 				},
 			),
+
+		submitReview: publicProcedure
+			.input(
+				z.object({
+					worktreePath: z.string(),
+					event: z.enum(["approve", "request-changes", "comment"]),
+					body: z.string().optional(),
+				}),
+			)
+			.mutation(async ({ input }): Promise<{ success: boolean }> => {
+				assertRegisteredWorktree(input.worktreePath);
+				return submitReviewFn({
+					worktreePath: input.worktreePath,
+					event: input.event,
+					body: input.body,
+				});
+			}),
+
+		getPRDiff: publicProcedure
+			.input(
+				z.object({
+					worktreePath: z.string(),
+					baseBranch: z.string().default("main"),
+				}),
+			)
+			.query(async ({ input }): Promise<{ diff: string }> => {
+				assertRegisteredWorktree(input.worktreePath);
+				const git = await getGitWithShellPath(input.worktreePath);
+				const diff = await git.diff([
+					`origin/${input.baseBranch}...HEAD`,
+				]);
+				return { diff };
+			}),
 	});
 };
