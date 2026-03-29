@@ -12,6 +12,7 @@ import {
 	HiOutlineDocumentDuplicate,
 	HiOutlineTrash,
 } from "react-icons/hi2";
+import { LuExternalLink } from "react-icons/lu";
 import { useCopyToClipboard } from "renderer/hooks/useCopyToClipboard";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import type { TaskWithStatus } from "../../../components/TasksView/hooks/useTasksTable";
@@ -34,6 +35,13 @@ export function TaskActionMenu({ task, onDelete }: TaskActionMenuProps) {
 
 	const handleCopyTitle = () => {
 		copyToClipboard(task.title);
+		setOpen(false);
+	};
+
+	const handleOpenInLinear = () => {
+		if (task.externalUrl) {
+			window.open(task.externalUrl, "_blank", "noopener,noreferrer");
+		}
 		setOpen(false);
 	};
 
@@ -68,6 +76,12 @@ export function TaskActionMenu({ task, onDelete }: TaskActionMenuProps) {
 					<HiOutlineDocumentDuplicate className="size-4" />
 					<span>Copy Title</span>
 				</DropdownMenuItem>
+				{task.externalUrl && (
+					<DropdownMenuItem onSelect={handleOpenInLinear}>
+						<LuExternalLink className="size-4" />
+						<span>Open in Linear</span>
+					</DropdownMenuItem>
+				)}
 
 				<DropdownMenuSeparator />
 
