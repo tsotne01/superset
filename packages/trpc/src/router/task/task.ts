@@ -11,7 +11,7 @@ import { TRPCError, type TRPCRouterRecord } from "@trpc/server";
 import { and, asc, desc, eq, ilike, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
-import { syncTask } from "../../lib/integrations/sync";
+import { syncComment, syncTask } from "../../lib/integrations/sync";
 import { protectedProcedure, publicProcedure } from "../../trpc";
 import {
 	createTaskFromUiSchema,
@@ -293,6 +293,18 @@ export const taskRouter = {
 					updatedAt: new Date(),
 				})
 				.returning();
+
+			// Fire-and-forget: sync comment to Linear if the task is linked
+			const task = await db.query.tasks.findFirst({
+				where: eq(tasks.id, input.taskId),
+				columns: { externalProvider: true },
+			});
+			if (task?.externalProvider === "linear" && comment) {
+				syncComment(comment.id).catch((err) =>
+					console.error("[addComment] syncComment failed:", err),
+				);
+			}
+
 			return comment;
 		}),
 
