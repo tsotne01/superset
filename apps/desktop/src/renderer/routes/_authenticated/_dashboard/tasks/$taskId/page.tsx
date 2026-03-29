@@ -141,13 +141,14 @@ function TaskDetailPage() {
 						<h2 className="text-lg font-semibold mb-4">Activity</h2>
 
 						<ActivitySection
+							taskId={task.id}
 							createdAt={new Date(task.createdAt)}
 							creatorName={task.assignee?.name ?? "Someone"}
 							creatorAvatarUrl={task.assignee?.image}
 						/>
 
 						<div className="mt-6">
-							<CommentInput />
+							<CommentInput taskId={task.id} />
 						</div>
 					</div>
 				</ScrollArea>

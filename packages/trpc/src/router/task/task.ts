@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { db, dbWs } from "@superset/db/client";
-import { members, taskStatuses, tasks, users } from "@superset/db/schema";
+import { members, taskComments, taskStatuses, tasks, users } from "@superset/db/schema";
 import { seedDefaultStatuses } from "@superset/db/seed-default-statuses";
 import { getCurrentTxid } from "@superset/db/utils";
 import {
@@ -7,7 +8,7 @@ import {
 	generateUniqueTaskSlug,
 } from "@superset/shared/task-slug";
 import { TRPCError, type TRPCRouterRecord } from "@trpc/server";
-import { and, desc, eq, ilike, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { syncTask } from "../../lib/integrations/sync";
@@ -258,6 +259,41 @@ export const taskRouter = {
 			}
 
 			return result;
+		}),
+
+	getComments: publicProcedure
+		.input(z.string().uuid())
+		.query(async ({ input }) => {
+			return db
+				.select()
+				.from(taskComments)
+				.where(and(eq(taskComments.taskId, input), isNull(taskComments.deletedAt)))
+				.orderBy(asc(taskComments.createdAt));
+		}),
+
+	addComment: protectedProcedure
+		.input(z.object({ taskId: z.string().uuid(), body: z.string().min(1) }))
+		.mutation(async ({ ctx, input }) => {
+			const organizationId = ctx.session.session.activeOrganizationId;
+			if (!organizationId) {
+				throw new TRPCError({ code: "FORBIDDEN", message: "No active organization selected" });
+			}
+			const [comment] = await db
+				.insert(taskComments)
+				.values({
+					taskId: input.taskId,
+					organizationId,
+					externalId: randomUUID(),
+					externalProvider: "superset",
+					body: input.body,
+					authorExternalId: ctx.session.user.id,
+					authorName: ctx.session.user.name ?? null,
+					authorAvatarUrl: ctx.session.user.image ?? null,
+					createdAt: new Date(),
+					updatedAt: new Date(),
+				})
+				.returning();
+			return comment;
 		}),
 
 	delete: protectedProcedure
