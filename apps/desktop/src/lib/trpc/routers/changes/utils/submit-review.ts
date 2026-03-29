@@ -35,9 +35,7 @@ export async function submitReview({
 			args.push(String(prNumber));
 		}
 		args.push(eventFlag);
-		if (body) {
-			args.push("--body", body);
-		}
+		args.push("--body", body ?? "");
 		if (repoArgs) {
 			args.push(...repoArgs);
 		}

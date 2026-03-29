@@ -757,11 +757,28 @@ export const createGitOperationsRouter = () => {
 			)
 			.mutation(async ({ input }): Promise<{ success: boolean }> => {
 				assertRegisteredWorktree(input.worktreePath);
-				return submitReviewFn({
-					worktreePath: input.worktreePath,
-					event: input.event,
-					body: input.body,
-				});
+				try {
+					return await submitReviewFn({
+						worktreePath: input.worktreePath,
+						event: input.event,
+						body: input.body,
+					});
+				} catch (error) {
+					const message =
+						error instanceof Error ? error.message : String(error);
+					console.error("[git/submitReview] Failed to submit review:", message);
+
+					if (isNoPullRequestFoundMessage(message)) {
+						throw new TRPCError({
+							code: "NOT_FOUND",
+							message: "No pull request found for this branch",
+						});
+					}
+					throw new TRPCError({
+						code: "INTERNAL_SERVER_ERROR",
+						message: `Failed to submit review: ${message}`,
+					});
+				}
 			}),
 
 		getPRDiff: publicProcedure
@@ -774,10 +791,15 @@ export const createGitOperationsRouter = () => {
 			.query(async ({ input }): Promise<{ diff: string }> => {
 				assertRegisteredWorktree(input.worktreePath);
 				const git = await getGitWithShellPath(input.worktreePath);
-				const diff = await git.diff([
-					`origin/${input.baseBranch}...HEAD`,
-				]);
-				return { diff };
+				try {
+					const diff = await git.diff([`origin/${input.baseBranch}...HEAD`]);
+					return { diff };
+				} catch (error) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: `Could not generate diff against origin/${input.baseBranch}. Ensure the remote branch exists and has been fetched.`,
+					});
+				}
 			}),
 	});
 };
