@@ -1,13 +1,13 @@
 import { Button } from "@superset/ui/button";
 import { toast } from "@superset/ui/sonner";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { VscLoading, VscRobot } from "react-icons/vsc";
 import { AgentSelect } from "renderer/components/AgentSelect";
 import { launchAgentSession } from "renderer/lib/agent-session-orchestrator";
 import { electronTrpc } from "renderer/lib/electron-trpc";
-import { buildPromptAgentLaunchRequest } from "shared/utils/agent-launch-request";
 import {
 	type AgentDefinitionId,
+	buildFileCommandFromAgentConfig,
 	getEnabledAgentConfigs,
 	getFallbackAgentId,
 	indexResolvedAgentConfigs,
@@ -76,6 +76,12 @@ export function AIReviewLauncher({
 		fallbackAgentId ?? "none",
 	);
 
+	useEffect(() => {
+		if (fallbackAgentId && selectedAgent === "none") {
+			setSelectedAgent(fallbackAgentId);
+		}
+	}, [fallbackAgentId, selectedAgent]);
+
 	const trpcUtils = electronTrpc.useUtils();
 	const terminalCreateOrAttach =
 		electronTrpc.terminal.createOrAttach.useMutation();
@@ -84,6 +90,12 @@ export function AIReviewLauncher({
 	const handleLaunchReview = async () => {
 		if (selectedAgent === "none") {
 			toast.error("Select an agent first.");
+			return;
+		}
+
+		const config = agentConfigsById.get(selectedAgent);
+		if (!config?.enabled) {
+			toast.error("Enable an agent in Settings > Agents first.");
 			return;
 		}
 
@@ -103,18 +115,45 @@ export function AIReviewLauncher({
 			// 2. Build prompt
 			const prompt = buildReviewPrompt({ diff, prTitle, prNumber });
 
-			// 3. Build launch request (same pattern as OpenInWorkspace)
-			const launchRequest = buildPromptAgentLaunchRequest({
-				workspaceId,
-				source: "open-in-workspace",
-				selectedAgent,
-				prompt,
-				configsById: agentConfigsById,
-			});
+			// 3. Build launch request using file-based prompt to avoid terminal buffer limits
+			let launchRequest;
 
-			if (!launchRequest) {
-				toast.error("Failed to build agent launch request.");
-				return;
+			if (config.kind === "chat") {
+				launchRequest = {
+					kind: "chat" as const,
+					workspaceId,
+					agentType: config.id,
+					source: "open-in-workspace" as const,
+					chat: {
+						initialPrompt: prompt,
+						model: config.model,
+					},
+				};
+			} else {
+				const taskPromptFileName = `pr-review-${prNumber}.md`;
+				const command = buildFileCommandFromAgentConfig({
+					filePath: `.superset/${taskPromptFileName}`,
+					config,
+				});
+
+				if (!command) {
+					toast.error("Failed to build agent command.");
+					return;
+				}
+
+				launchRequest = {
+					kind: "terminal" as const,
+					workspaceId,
+					agentType: config.id,
+					source: "open-in-workspace" as const,
+					terminal: {
+						command,
+						name: `PR Review #${prNumber}`,
+						taskPromptContent: prompt,
+						taskPromptFileName,
+						autoExecute: true,
+					},
+				};
 			}
 
 			// 4. Launch agent in terminal pane
