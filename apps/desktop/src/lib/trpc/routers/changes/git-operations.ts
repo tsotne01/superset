@@ -375,9 +375,9 @@ const ghRepoMetadataSchema = z.object({
 	isFork: z.boolean(),
 	parent: z
 		.object({
-			url: z.string().url(),
+			url: z.string().url().optional(),
 		})
-		.nullable(),
+		.nullish(),
 	defaultBranchRef: z.object({
 		name: z.string().min(1),
 	}),
