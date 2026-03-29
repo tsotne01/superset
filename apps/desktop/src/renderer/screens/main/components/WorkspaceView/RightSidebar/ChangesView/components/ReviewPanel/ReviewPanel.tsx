@@ -31,12 +31,18 @@ import {
 	reviewDecisionConfig,
 	splitPullRequestComments,
 } from "./utils";
+import { AIReviewLauncher } from "./components/AIReviewLauncher";
+import { ReviewActions } from "./components/ReviewActions";
 
 interface ReviewPanelProps {
 	pr: GitHubStatus["pr"] | null;
 	comments?: PullRequestComment[];
 	isLoading?: boolean;
 	isCommentsLoading?: boolean;
+	worktreePath?: string;
+	workspaceId?: string;
+	baseBranch?: string;
+	onReviewSubmitted?: () => void;
 }
 
 export function ReviewPanel({
@@ -44,6 +50,10 @@ export function ReviewPanel({
 	comments = [],
 	isLoading = false,
 	isCommentsLoading = false,
+	worktreePath,
+	workspaceId,
+	baseBranch,
+	onReviewSubmitted,
 }: ReviewPanelProps) {
 	const [checksOpen, setChecksOpen] = useState(true);
 	const [commentsOpen, setCommentsOpen] = useState(true);
@@ -530,6 +540,18 @@ export function ReviewPanel({
 					</div>
 				</CollapsibleContent>
 			</Collapsible>
+			{pr && pr.state === "open" && worktreePath && workspaceId && baseBranch ? (
+				<AIReviewLauncher
+					workspaceId={workspaceId}
+					worktreePath={worktreePath}
+					baseBranch={baseBranch}
+					prTitle={pr.title}
+					prNumber={pr.number}
+				/>
+			) : null}
+			{pr && pr.state === "open" && worktreePath && onReviewSubmitted ? (
+				<ReviewActions worktreePath={worktreePath} onSuccess={onReviewSubmitted} />
+			) : null}
 		</div>
 	);
 }
